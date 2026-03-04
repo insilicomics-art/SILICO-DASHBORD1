@@ -36,4 +36,4 @@ A modern, interactive dashboard for tracking research projects across VIT Vellor
 
 - `src/components`: UI Components (Dashboard, Sidebar, Tables)
 - `src/data`: Mock data generation
-- `src/App.tsx`: Main layout and routing logic
+- `src/App.tsx`: Main layout and routing logic# SILICO-DASHBORD1
