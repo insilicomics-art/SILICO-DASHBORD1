@@ -72,8 +72,8 @@ const UserAnalysis: React.FC<UserAnalysisProps> = ({ user, projects, onBack }) =
       if (parentProject && parentProject.activities && parentProject.activities.length > 0) {
         const activityShare = 1 / parentProject.activities.length;
         
-        const activityValue = parentProject.totalFunding * activityShare;
-        const projectReceived = (parentProject.firstPaymentAmount || 0) + (parentProject.finalPaymentAmount || 0);
+        const activityValue = (Number(parentProject.totalFunding) || 0) * activityShare;
+        const projectReceived = (Number(parentProject.firstPaymentAmount) || 0) + (Number(parentProject.finalPaymentAmount) || 0);
         const activityReceived = projectReceived * activityShare;
         
         totalValue += activityValue;
@@ -87,7 +87,7 @@ const UserAnalysis: React.FC<UserAnalysisProps> = ({ user, projects, onBack }) =
 
   // KPIs
   const totalProjectsLed = ledProjects.length;
-  const totalFundingManaged = ledProjects.reduce((sum, p) => sum + p.totalFunding, 0);
+  const totalFundingManaged = ledProjects.reduce((sum, p) => sum + (Number(p.totalFunding) || 0), 0);
   
   const totalActivities = assignedActivities.length;
   const completedActivities = assignedActivities.filter(a => a.status === 'Completed').length;

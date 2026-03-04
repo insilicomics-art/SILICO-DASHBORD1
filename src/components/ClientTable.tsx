@@ -17,7 +17,8 @@ import {
   Card,
   CardContent,
   Chip,
-  Divider
+  Divider,
+  MenuItem
 } from '@mui/material';
 import { 
   Plus, 
@@ -31,19 +32,19 @@ import {
   DollarSign, 
   ArrowRight,
   TrendingUp,
-  Globe
+  Globe,
+  Pencil
 } from 'lucide-react';
-import { institutionColors } from '../data/mockData';
-
-import { type Project, type Student } from '../data/mockData';
+import { institutionColors, countries, type Project, type Student, type Institution } from '../data/mockData';
 
 interface ClientTableProps {
-  clients: string[];
+  clients: Institution[];
   projects: Project[];
   students: Student[];
-  onAddClient: (client: string) => void;
-  onDeleteClient: (client: string) => void;
-  onSelectClient: (client: string) => void;
+  onAddClient: (client: Partial<Institution>) => void;
+  onUpdateClient: (client: Institution) => void;
+  onDeleteClient: (clientId: string) => void;
+  onSelectClient: (client: Institution) => void;
 }
 
 const getInstitutionIcon = (name: string) => {
@@ -60,7 +61,7 @@ const formatCurrency = (val: number) => {
   }).format(val);
 };
 
-const SummaryCard = ({ title, value, icon, color, subtitle }: any) => (
+const SummaryCard = ({ title, value, icon, color, subtitle }: { title: string; value: string | number; icon: React.ReactNode; color: string; subtitle?: string }) => (
   <Card sx={{ height: '100%', borderRadius: 2, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
     <CardContent sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2 }}>
@@ -79,26 +80,43 @@ const SummaryCard = ({ title, value, icon, color, subtitle }: any) => (
   </Card>
 );
 
-const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, onAddClient, onDeleteClient, onSelectClient }) => {
+const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, onAddClient, onUpdateClient, onDeleteClient, onSelectClient }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newClient, setNewClient] = useState('');
+  const [formData, setFormData] = useState<Partial<Institution>>({ name: '', country: 'India' });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredClients = useMemo(() => {
-    return clients.filter(c => c.toLowerCase().includes(searchQuery.toLowerCase()));
+    return clients.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [clients, searchQuery]);
 
   const stats = useMemo(() => {
     const totalProjects = projects.length;
     const totalStudents = students.length;
-    const totalFunding = projects.reduce((acc, p) => acc + p.totalFunding, 0);
+    const totalFunding = projects.reduce((acc, p) => acc + (Number(p.totalFunding) || 0), 0);
     return { totalProjects, totalStudents, totalFunding };
   }, [projects, students]);
 
-  const handleAddClick = () => {
-    if (!newClient) return;
-    onAddClient(newClient);
-    setNewClient('');
+  const handleOpenDialog = (client?: Institution) => {
+      if (client) {
+          setFormData(client);
+          setEditingId(client.id);
+      } else {
+          setFormData({ name: '', country: 'India' });
+          setEditingId(null);
+      }
+      setIsDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!formData.name) return;
+    
+    if (editingId && onUpdateClient) {
+        onUpdateClient(formData as Institution);
+    } else {
+        onAddClient(formData);
+    }
+    
     setIsDialogOpen(false);
   };
 
@@ -119,7 +137,7 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, 
               <Button 
                 variant="contained" 
                 startIcon={<Plus size={20} />} 
-                onClick={() => setIsDialogOpen(true)} 
+                onClick={() => handleOpenDialog()} 
                 sx={{ borderRadius: 2.5, px: 4, py: 1.5, fontSize: '0.95rem', boxShadow: '0 10px 15px -3px rgba(59, 130, 246, 0.3)' }}
               >
                 Register Institution
@@ -192,12 +210,12 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, 
 
       <Grid container spacing={3}>
         {filteredClients.map((client) => {
-            const color = institutionColors[client] || '#64748b';
-            const instProjects = projects.filter(p => p.institution === client);
-            const instStudents = students.filter(s => s.university === client);
-            const totalFunding = instProjects.reduce((acc, p) => acc + p.totalFunding, 0);
+            const color = institutionColors[client.name] || '#64748b';
+            const instProjects = projects.filter(p => p.institution === client.name);
+            const instStudents = students.filter(s => s.university === client.name);
+            const totalFunding = instProjects.reduce((acc, p) => acc + (Number(p.totalFunding) || 0), 0);
             return (
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={client}>
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={client.id}>
                     <Paper 
                         onClick={() => onSelectClient(client)}
                         sx={{ 
@@ -241,17 +259,26 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, 
                                   transition: 'all 0.4s ease'
                               }}
                           >
-                              {getInstitutionIcon(client)}
+                              {getInstitutionIcon(client.name)}
                           </Box>
-                          <Chip 
-                            label="PRO" 
-                            size="small" 
-                            sx={{ fontWeight: 900, bgcolor: `${color}10`, color: color, borderRadius: 1.5, fontSize: '0.65rem' }} 
-                          />
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            {client.country && (
+                              <Chip 
+                                label={client.country.toUpperCase()} 
+                                size="small" 
+                                sx={{ fontWeight: 800, bgcolor: '#f1f5f9', color: '#64748b', borderRadius: 1.5, fontSize: '0.65rem' }} 
+                              />
+                            )}
+                            <Chip 
+                              label="PRO" 
+                              size="small" 
+                              sx={{ fontWeight: 900, bgcolor: `${color}10`, color: color, borderRadius: 1.5, fontSize: '0.65rem' }} 
+                            />
+                          </Box>
                         </Box>
                         
                         <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', fontSize: '1.1rem', mb: 1, lineHeight: 1.2, height: '2.4em', overflow: 'hidden' }}>
-                            {client}
+                            {client.name}
                         </Typography>
 
                         <Stack spacing={1.5} sx={{ mt: 'auto' }}>
@@ -289,22 +316,39 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, 
                             View Silico Audit <ArrowRight size={14} className="arrow-icon" style={{ transition: 'all 0.3s ease', opacity: 0.5 }} />
                           </Typography>
                           
-                          <Tooltip title="De-register Institution">
-                              <IconButton 
-                                  size="small" 
-                                  color="error" 
-                                  onClick={(e) => {
-                                      e.stopPropagation();
-                                      onDeleteClient(client);
-                                  }}
-                                  sx={{ 
-                                      opacity: 0.2, 
-                                      '&:hover': { opacity: 1, bgcolor: '#fee2e2' } 
-                                  }}
-                              >
-                                  <Trash2 size={14} />
-                              </IconButton>
-                          </Tooltip>
+                          <Stack direction="row" spacing={1}>
+                            <Tooltip title="Edit Institution">
+                                <IconButton 
+                                    size="small" 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenDialog(client);
+                                    }}
+                                    sx={{ 
+                                        opacity: 0.4, 
+                                        '&:hover': { opacity: 1, bgcolor: '#f1f5f9' } 
+                                    }}
+                                >
+                                    <Pencil size={14} />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="De-register Institution">
+                                <IconButton 
+                                    size="small" 
+                                    color="error" 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDeleteClient(client.id);
+                                    }}
+                                    sx={{ 
+                                        opacity: 0.2, 
+                                        '&:hover': { opacity: 1, bgcolor: '#fee2e2' } 
+                                    }}
+                                >
+                                    <Trash2 size={14} />
+                                </IconButton>
+                            </Tooltip>
+                          </Stack>
                         </Box>
                     </Paper>
                 </Grid>
@@ -324,26 +368,42 @@ const ClientTable: React.FC<ClientTableProps> = ({ clients, projects, students, 
       </Grid>
 
       <Dialog open={isDialogOpen} onClose={() => setIsDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2.5 } }}>
-        <DialogTitle sx={{ fontWeight: 800 }}>Register New Partner</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800 }}>
+            {editingId ? 'Edit Partner Institution' : 'Register New Partner'}
+        </DialogTitle>
         <DialogContent dividers>
-          <Box sx={{ py: 2 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Register a new academic or corporate partner to begin tracking research initiatives and student engagements.
+          <Box sx={{ py: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              {editingId ? 'Update the details for this institution.' : 'Register a new academic or corporate partner to begin tracking research initiatives and student engagements.'}
             </Typography>
             <TextField 
               label="Institution Name" 
               fullWidth 
               autoFocus
-              value={newClient} 
-              onChange={(e) => setNewClient(e.target.value)} 
+              value={formData.name} 
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
               placeholder="e.g. Stanford University or Pfizer"
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             />
+            <TextField 
+              label="Country" 
+              select
+              fullWidth 
+              value={formData.country} 
+              onChange={(e) => setFormData({ ...formData, country: e.target.value })} 
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            >
+              {countries.map((country) => (
+                <MenuItem key={country} value={country}>{country}</MenuItem>
+              ))}
+            </TextField>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button onClick={() => setIsDialogOpen(false)} sx={{ fontWeight: 700 }}>Cancel</Button>
-          <Button variant="contained" onClick={handleAddClick} sx={{ fontWeight: 800, borderRadius: 2, px: 4 }}>Confirm Registration</Button>
+          <Button variant="contained" onClick={handleSave} sx={{ fontWeight: 800, borderRadius: 2, px: 4 }}>
+            {editingId ? 'Save Changes' : 'Confirm Registration'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

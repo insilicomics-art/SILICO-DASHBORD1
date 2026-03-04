@@ -1,4 +1,151 @@
-export type Institution = string;
+// Import DB content
+import db from '../../db.json';
+
+// --- DATA MAPPING ---
+
+// Map DB Projects to App Project Type
+export const projects: Project[] = (db.projects || []).map((p: any) => ({
+  ...p,
+  progress: p.progress || 0,
+  totalFunding: Number(p.totalFunding) || 0,
+  firstPaymentAmount: Number(p.firstPaymentAmount) || 0,
+  finalPaymentAmount: Number(p.finalPaymentAmount) || 0,
+  activities: p.activities || []
+}));
+
+// Map DB Students to App Student Type
+export const initialStudents: Student[] = (db.students || []).map((s: any) => ({
+  ...s,
+  totalFee: Number(s.totalFee) || 0,
+  firstPaymentAmount: Number(s.firstPaymentAmount) || 0,
+  finalPaymentAmount: Number(s.finalPaymentAmount) || 0
+}));
+
+// Map DB Client Profiles
+export const initialClientProfiles: ClientProfile[] = (db.clientProfiles || []).map((c: any) => ({
+  ...c,
+  status: c.status as 'Active' | 'Inactive'
+}));
+
+// Map DB Users
+export const mockUsers: User[] = (db.users || []).map((u: any) => ({
+  id: u.id,
+  name: u.name,
+  role: u.role || 'User', // Default role if missing
+  avatar: u.avatar
+}));
+
+// Map DB Payments
+export const initialPayments: Payment[] = (db.payments || []).map((p: any) => ({
+  ...p,
+  amount: Number(p.amount) || 0
+}));
+
+// Map DB Servers
+export const initialServers: any[] = (db.servers || []).map((s: any) => ({
+  id: s.id,
+  name: s.name,
+  specs: s.specs || '',
+  status: s.status || 'Inactive'
+}));
+
+export const countries = [
+  "India", "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", 
+  "Japan", "China", "Singapore", "South Korea", "Russia", "Brazil", "Italy", "Spain", 
+  "Netherlands", "Switzerland", "Sweden", "Belgium", "Austria", "Norway", "Denmark", 
+  "Finland", "Ireland", "New Zealand", "United Arab Emirates", "Saudi Arabia", "South Africa", 
+  "Malaysia", "Thailand", "Indonesia", "Vietnam", "Philippines", "Mexico", "Argentina", 
+  "Chile", "Colombia", "Egypt", "Nigeria", "Kenya", "Global"
+].sort();
+
+export const institutionCountries: Record<string, string> = {
+  'VIT Vellore': 'India',
+  'Vellore Institute of Technology': 'India',
+  'Bionome': 'India',
+  'KLE Tech': 'India',
+  'IIT Madras': 'India',
+  'PES University': 'India',
+  'Jain University': 'India',
+  'Sri Ramachandra Institute': 'India',
+  'Smt Gandhimathi College of Pharmacy': 'India',
+  'Manipal University': 'India',
+  'Amrita Vishwa Vidyapeetham': 'India',
+  'SRM Institute': 'India',
+  'Anna University': 'India',
+  'MS Ramaiah': 'India',
+  'REVA University': 'India',
+  'Nehru Arts and Science College': 'India',
+  'Siddaganga Institute of Technology': 'India',
+  'JSS College of Arts, Commerce and Science, Mysore': 'India',
+  'School of Life Science - Ooty Campus': 'India',
+  'V. V. Vanniyaperumal college for women': 'India',
+  'K.S. Rangasamy College of Arts and Science': 'India',
+  'Bioneeds': 'India',
+  'Tamil Nadu Agricultural University': 'India',
+  'P. Rami Reddy Memorial College of Pharmacy': 'India',
+  'KLE Technological University': 'India',
+  'Kumaraguru College of Technology': 'India',
+  'PSGR Krishnammal College for Women': 'India',
+  'Dr.N.G.P. Arts and Science College': 'India',
+  'Acharya Institute of Technology': 'India',
+  'University of Horticultural Sciences': 'India',
+  'Maharani Lakshmi Ammanni College for Women': 'India',
+  'Ramaiah Institute of Technology': 'India',
+  'University of Tokyo': 'Japan',
+  'Kyoto University': 'Japan',
+  'Osaka University': 'Japan',
+  'Hokkaido University': 'Japan',
+  'Harvard University': 'United States',
+  'Stanford University': 'United States',
+  'MIT': 'United States',
+  'Other': 'Global'
+};
+
+// Extract Institutions from Projects & Client Profiles for the dropdown list
+// Also include the ones explicitly in db.institutions if that exists
+const dbInstitutions = (db.institutions || []).map((i: any) => ({ name: i.name, country: i.country || 'India', id: i.id }));
+const projectInstitutions = projects.map(p => p.institution).filter(Boolean);
+const clientInstitutions = initialClientProfiles.map(c => c.university).filter(Boolean);
+const studentInstitutions = initialStudents.map(s => s.university).filter(Boolean);
+
+const uniqueInstitutionNames = Array.from(new Set([
+  ...dbInstitutions.map((i: any) => i.name),
+  ...projectInstitutions,
+  ...clientInstitutions,
+  ...studentInstitutions,
+  // Keep some defaults if DB is empty
+  'VIT Vellore', 'Bionome', 'KLE Tech', 'IIT Madras' 
+])).sort();
+
+export const initialInstitutions: Institution[] = uniqueInstitutionNames.map(name => {
+  // Try to find existing object from DB or use default mapping
+  const existing = dbInstitutions.find((i: any) => i.name === name);
+  return {
+    id: existing?.id || name.replace(/\s+/g, '-').toLowerCase(),
+    name: name,
+    country: existing?.country || institutionCountries[name] || 'India'
+  };
+});
+
+// Project Types
+const dbProjectTypes = (db.projectTypes || []).map((t: any) => t.name);
+const usedProjectTypes = projects.map(p => p.projectType).filter(Boolean);
+
+export const initialProjectTypes: string[] = Array.from(new Set([
+  ...dbProjectTypes,
+  ...usedProjectTypes,
+  'Molecular Dynamics', 'Molecular Docking'
+])).sort();
+
+
+// --- CONSTANTS & OPTIONS ---
+
+export interface Institution {
+  id: string;
+  name: string;
+  country: string;
+}
+
 export type Status = 'Ongoing' | 'Completed' | 'Planned' | 'Stopped';
 export type Office = 'Ooty' | 'Coimbatore';
 
@@ -8,21 +155,6 @@ export interface User {
   role: string;
   avatar?: string;
 }
-
-export const mockUsers: User[] = [
-  { id: 'U001', name: 'Dr. Sarah Chen', role: 'Lead Scientist' },
-  { id: 'U002', name: 'Prof. R. Venkat', role: 'Professor' },
-  { id: 'U003', name: 'Dr. Vivek Chandramohan', role: 'Senior Researcher' },
-  { id: 'U004', name: 'Dr. Emily Watson', role: 'Principal Investigator' },
-  { id: 'U005', name: 'Dr. K. Gupta', role: 'Associate Professor' },
-  { id: 'U006', name: 'Prof. S. Deshpande', role: 'Head of Dept' },
-  { id: 'U007', name: 'Dr. M. Johnson', role: 'Clinical Research Lead' },
-  { id: 'U008', name: 'Dr. A. Verma', role: 'Security Analyst' },
-  { id: 'U009', name: 'Dr. P. Kulkarni', role: 'Energy Systems Engineer' },
-  { id: 'U010', name: 'Dr. L. Thomas', role: 'Chemical Engineer' },
-  { id: 'U011', name: 'Dr. H. Lee', role: 'Nanotech Specialist' },
-  { id: 'U012', name: 'Prof. J. Smith', role: 'Renewable Energy Expert' }
-];
 
 export interface ProjectActivity {
   id: string;
@@ -55,7 +187,7 @@ export interface Project {
   projectType: string;
   office: Office;
   clientName: string;
-  institution: Institution;
+  institution: string;
   description: string;
   status: Status;
   startDate: string;
@@ -74,149 +206,6 @@ export interface Project {
   scientificDetails?: ScientificDetails;
 }
 
-export const projects: Project[] = [
-  {
-    id: 'P001',
-    title: 'SARS-CoV-2 Spike Protein Dynamics',
-    projectType: 'Molecular Dynamics',
-    office: 'Coimbatore',
-    clientName: 'Dr. Rajesh Kumar',
-    institution: 'VIT Vellore',
-    description: 'Investigating the stability of the spike protein RBD variants.',
-    status: 'Ongoing',
-    startDate: '2025-11-01',
-    lead: 'Dr. Sarah Chen',
-    totalFunding: 150000,
-    firstPaymentAmount: 75000,
-    firstPaymentDate: '2025-11-01',
-    paymentMode: 'Bank Transfer',
-    bankDetails: 'Insilicomics HDFC',
-    progress: 65,
-    scientificDetails: {
-      targetProtein: 'Spike Glycoprotein',
-      simulationEngine: 'GROMACS',
-      atomsCount: 125000,
-      simulationTimeNs: 300
-    },
-    activities: [
-      {
-        id: 'A001',
-        name: 'System Minimization',
-        assignedTo: 'Dr. Sarah Chen',
-        server: 'HPC Cluster',
-        duration: '100ns',
-        progress: 100,
-        startDate: '2025-11-01',
-        endDate: '2025-11-05',
-        totalAtoms: 125000,
-        status: 'Completed',
-        simulationEngine: 'GROMACS'
-      },
-      {
-        id: 'A002',
-        name: 'Production Run Phase 1',
-        assignedTo: 'Dr. Sarah Chen',
-        server: 'Server 1',
-        duration: '200ns',
-        progress: 50,
-        startDate: '2025-11-10',
-        endDate: '',
-        totalAtoms: 125000,
-        status: 'In Progress',
-        simulationEngine: 'GROMACS'
-      }
-    ]
-  },
-  {
-    id: 'P002',
-    title: 'Oncology Drug Repurposing',
-    projectType: 'Molecular Docking',
-    office: 'Ooty',
-    clientName: 'Prof. Michael Brown',
-    institution: 'Bionome',
-    description: 'Screening FDA approved drugs against EGFR mutants.',
-    status: 'Completed',
-    startDate: '2025-10-15',
-    completionDate: '2026-01-10',
-    lead: 'Dr. Vivek Chandramohan',
-    totalFunding: 80000,
-    firstPaymentAmount: 40000,
-    firstPaymentDate: '2025-10-15',
-    paymentMode: 'Cheque',
-    bankDetails: 'Insilicomics Research Pvt, Ltd',
-    finalPaymentAmount: 40000,
-    finalPaymentDate: '2026-01-10',
-    progress: 100,
-    scientificDetails: {
-      targetProtein: 'EGFR T790M',
-      ligandCount: 2500,
-      simulationEngine: 'AutoDock',
-      dockingScore: -9.8,
-      simulationTimeNs: 500
-    },
-    activities: [
-      {
-        id: 'A003',
-        name: 'Virtual Screening',
-        assignedTo: 'Dr. Vivek Chandramohan',
-        server: 'Server 3',
-        duration: '500ns',
-        progress: 100,
-        startDate: '2025-10-20',
-        endDate: '2025-11-15',
-        totalAtoms: 5000,
-        status: 'Completed',
-        simulationEngine: 'AutoDock'
-      }
-    ]
-  },
-  {
-    id: 'P003',
-    title: 'Neurodegenerative Peptide Design',
-    projectType: 'Homology Modelling',
-    office: 'Coimbatore',
-    clientName: 'Dr. Linda Garcia',
-    institution: 'KLE Tech',
-    description: 'Designing novel peptides for Alzheimer inhibition.',
-    status: 'Ongoing',
-    startDate: '2026-01-05',
-    lead: 'Dr. Sarah Chen',
-    totalFunding: 120000,
-    firstPaymentAmount: 0,
-    paymentMode: 'GPay',
-    bankDetails: 'Vivek Personal SBI',
-    progress: 15,
-    scientificDetails: {
-      targetProtein: 'Amyloid Beta',
-      simulationEngine: 'Desmond',
-      atomsCount: 45000,
-      simulationTimeNs: 50
-    },
-    activities: [
-      {
-        id: 'A004',
-        name: 'Template Selection',
-        assignedTo: 'Dr. Sarah Chen',
-        server: 'Server 2',
-        duration: '50ns',
-        progress: 100,
-        startDate: '2026-01-10',
-        endDate: '2026-01-12',
-        totalAtoms: 10000,
-        status: 'Completed',
-        simulationEngine: 'Desmond'
-      }
-    ]
-  }
-];
-
-export const initialInstitutions: string[] = [
-  'VIT Vellore',
-  'Bionome',
-  'KLE Tech',
-  'IIT Madras'
-];
-
 export const institutionColors: Record<string, string> = {
   'VIT Vellore': '#0ea5e9', // Sky Blue
   'Vellore Institute of Technology': '#0ea5e9',
@@ -233,25 +222,18 @@ export const institutionColors: Record<string, string> = {
   'Anna University': '#06b6d4', // Cyan
   'MS Ramaiah': '#a855f7', // Purple
   'REVA University': '#d946ef', // Fuchsia
+  'Nehru Arts and Science College': '#3b82f6',
+  'Siddaganga Institute of Technology': '#ef4444',
+  'JSS College of Arts, Commerce and Science, Mysore': '#f59e0b',
+  'School of Life Science - Ooty Campus': '#10b981',
+  'V. V. Vanniyaperumal college for women': '#ec4899',
+  'K.S. Rangasamy College of Arts and Science': '#8b5cf6',
+  'Bioneeds': '#6366f1',
+  'Tamil Nadu Agricultural University': '#84cc16',
+  'P. Rami Reddy Memorial College of Pharmacy': '#f97316',
+  'KLE Technological University': '#f59e0b',
   'Other': '#64748b' // Slate
 };
-
-export const initialProjectTypes: string[] = [
-  'Molecular Dynamics',
-  'Molecular Docking',
-  'Protein Protein Docking',
-  'Homology Modelling',
-  'NGS Data Analysis',
-  'Genomic Sequencing',
-  'Bioinformatics',
-  'Drug Discovery',
-  'Student Training',
-  'Workshop',
-  'VAP',
-  'Course',
-  'QSAR',
-  'Network Pharmacology'
-];
 
 export const departments = [
   'Biotechnology',
@@ -295,25 +277,41 @@ export const indianStates = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
 ];
 
+export const usaStates = [
+  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia", 
+  "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", 
+  "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", 
+  "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", 
+  "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"
+];
+
+export const japanPrefectures = [
+  "Aichi", "Akita", "Aomori", "Chiba", "Ehime", "Fukui", "Fukuoka", "Fukushima", "Gifu", "Gunma", 
+  "Hiroshima", "Hokkaido", "Hyogo", "Ibaraki", "Ishikawa", "Iwate", "Kagawa", "Kagoshima", "Kanagawa", "Kochi", 
+  "Kumamoto", "Kyoto", "Mie", "Miyagi", "Miyazaki", "Nagano", "Nagasaki", "Nara", "Niigata", "Oita", 
+  "Okayama", "Okinawa", "Osaka", "Saga", "Saitama", "Sapporo", "Shiga", "Shimane", "Shizuoka", "Tochigi", "Tokushima", 
+  "Tokyo", "Tottori", "Toyama", "Wakayama", "Yamagata", "Yamaguchi", "Yamanashi"
+];
+
 export const stateCities: Record<string, string[]> = {
   "Tamil Nadu": [
-    "Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Vellore", "Erode", "Thoothukudi", "Tirunelveli", "Thanjavur",
-    "Ooty", "Tiruppur", "Dindigul", "Kanchipuram", "Cuddalore", "Karur", "Nagercoil", "Kumbakonam", "Hosur", "Pollachi",
+    "Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Vellore", "Erode", "Thoothukudi", "Tirunelveli", "Thanjavur", 
     "Karaikudi", "Neyveli", "Sivakasi", "Ramanathapuram", "Pudukkottai", "Theni", "Virudhunagar", "Dharmapuri", "Krishnagiri",
     "Nagapattinam", "Viluppuram", "Chengalpattu", "Kanyakumari", "Udhagamandalam"
   ],
-  "Karnataka": ["Bengaluru", "Mysuru", "Hubballi-Dharwad", "Mangaluru", "Belagavi", "Kalaburagi", "Davanagere", "Ballari", "Vijayapura", "Shivamogga"],
+  "Karnataka": [
+    "Bengaluru", "Mysuru", "Hubballi-Dharwad", "Mangaluru", "Belagavi", "Kalaburagi", "Davanagere", "Ballari", "Vijayapura", "Shivamogga",
+    "Tumakuru", "Raichur", "Bidar", "Hosapete", "Gadag", "Hassan", "Udupi", "Robertsonpet", "Bhadravati", "Chitradurga", "Kolar", 
+    "Mandya", "Chikmagalur", "Gangavathi", "Bagalkot", "Ranebennuru"
+  ],
   "Maharashtra": ["Mumbai", "Pune", "Nagpur", "Thane", "Nashik", "Kalyan-Dombivli", "Vasai-Virar", "Aurangabad", "Navi Mumbai", "Solapur"],
   "Andhra Pradesh": ["Visakhapatnam", "Vijayawada", "Guntur", "Nellore", "Kurnool", "Kakinada", "Rajahmundry", "Kadapa", "Tirupati", "Anantapur"],
   "Telangana": ["Hyderabad", "Warangal", "Nizamabad", "Khammam", "Karimnagar", "Ramagundam", "Mahbubnagar", "Nalgonda", "Adilabad", "Suryapet"],
-  "Gujarat": ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Jamnagar", "Junagadh", "Gandhinagar", "Nadiad", "Gandhidham"],
-  "Uttar Pradesh": ["Lucknow", "Kanpur", "Ghaziabad", "Agra", "Meerut", "Varanasi", "Prayagraj", "Bareilly", "Aligarh", "Moradabad"],
-  "West Bengal": ["Kolkata", "Howrah", "Asansol", "Siliguri", "Durgapur", "Maheshtala", "Rajpur Sonarpur", "Gaya", "South Dumdum", "Gopalpur"],
+  "Kerala": ["Thiruvananthapuram", "Kochi", "Kozhikode", "Kollam", "Thrissur", "Kannur", "Alappuzha", "Palakkad", "Malappuram", "Manjeri"],
+  "Uttar Pradesh": ["Lucknow", "Kanpur", "Ghaziabad", "Agra", "Varanasi", "Meerut", "Prayagraj", "Bareilly", "Aligarh", "Moradabad"],
+  "West Bengal": ["Kolkata", "Asansol", "Siliguri", "Durgapur", "Bardhaman", "Malda", "Baharampur", "Habra", "Kharagpur", "Shantipur"],
+  "Gujarat": ["Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Jamnagar", "Junagadh", "Gandhinagar", "Gandhidham", "Anand"],
   "Rajasthan": ["Jaipur", "Jodhpur", "Kota", "Bikaner", "Ajmer", "Udaipur", "Bhilwara", "Alwar", "Bharatpur", "Sikar"],
-  "Kerala": ["Thiruvananthapuram", "Kochi", "Kozhikode", "Kollam", "Thrissur", "Alappuzha", "Palakkad", "Malappuram", "Punnapra", "Thalassery"],
-  "Delhi": ["New Delhi", "Delhi Cantt", "North Delhi", "South Delhi", "East Delhi", "West Delhi"],
-  "Punjab": ["Ludhiana", "Amritsar", "Jalandhar", "Patiala", "Bathinda", "Mohali"],
-  "Haryana": ["Faridabad", "Gurugram", "Panipat", "Ambala", "Yamunanagar", "Rohtak"],
   "Madhya Pradesh": ["Indore", "Bhopal", "Jabalpur", "Gwalior", "Ujjain", "Sagar"],
   "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga"],
   "Assam": ["Guwahati", "Silchar", "Dibrugarh", "Jorhat", "Nagaon", "Tinsukia"],
@@ -322,7 +320,11 @@ export const stateCities: Record<string, string[]> = {
   "Jharkhand": ["Jamshedpur", "Dhanbad", "Ranchi", "Bokaro Steel City", "Deoghar", "Phusro"],
   "Uttarakhand": ["Dehradun", "Haridwar", "Roorkee", "Haldwani", "Rudrapur", "Kashipur"],
   "Himachal Pradesh": ["Shimla", "Dharamshala", "Solan", "Mandi", "Nahan", "Paonta Sahib"],
-  "Goa": ["Panaji", "Margao", "Vasco da Gama", "Mapusa", "Ponda", "Bicholim"]
+  "Goa": ["Panaji", "Margao", "Vasco da Gama", "Mapusa", "Ponda", "Bicholim"],
+  // Japan Cities
+  "Hokkaido": ["Sapporo", "Asahikawa", "Hakodate", "Kushiro", "Tomakomai", "Obihiro", "Otaru", "Kitami", "Ebetsu"],
+  "Sapporo": ["Chuo-ku", "Kita-ku", "Higashi-ku", "Shiroishi-ku", "Toyohira-ku", "Minami-ku", "Nishi-ku", "Atsubetsu-ku", "Teine-ku", "Kiyota-ku"],
+  "Tokyo": ["Shinjuku", "Shibuya", "Minato", "Chuo", "Chiyoda", "Setagaya", "Meguro", "Toshima", "Nakano", "Suginami", "Hachioji", "Tachikawa", "Musashino", "Mitaka"]
 };
 
 export interface ClientProfile {
@@ -335,6 +337,9 @@ export interface ClientProfile {
   address: string;
   city: string;
   state: string;
+  country?: string;
+  designation?: string;
+  gstNo?: string;
   status: 'Active' | 'Inactive';
 }
 
@@ -345,15 +350,15 @@ export interface Student {
   department: string;
   email: string;
   phone: string;
-  office: Office;
+  office: string;
   address: string;
   city: string;
   state: string;
   country: string;
   enrollmentDate: string;
-  status: 'Active' | 'Inactive' | 'Graduated';
-  enrollmentType: 'Internship' | 'Workshop' | 'Training' | 'VAP' | 'Student Project' | 'Other';
-  mode: 'Offline' | 'Online' | 'Hybrid';
+  status: 'Active' | 'Graduated' | 'Dropped';
+  enrollmentType: 'Internship' | 'Training' | 'Student Project' | 'Course' | 'Workshop';
+  mode: 'Online' | 'Offline' | 'Hybrid';
   enrollmentNumber: string;
   totalFee: number;
   gstType?: 'With GST' | 'Without GST';
@@ -365,87 +370,21 @@ export interface Student {
   finalPaymentDate: string;
 }
 
-export const initialClientProfiles: ClientProfile[] = [
-  // ... existing profiles
-];
-
-export const initialStudents: Student[] = [
-  {
-    id: 'S001',
-    name: 'Arjun Mehta',
-    university: 'VIT Vellore',
-    department: 'Biotechnology',
-    email: 'arjun.m@vit.ac.in',
-    phone: '+91 99887 76655',
-    office: 'Coimbatore',
-    address: 'Vellore',
-    city: 'Vellore',
-    state: 'Tamil Nadu',
-    country: 'India',
-    enrollmentDate: '2025-12-01',
-    status: 'Active',
-    enrollmentType: 'Internship',
-    mode: 'Offline',
-    enrollmentNumber: 'VIT2025001',
-    totalFee: 25000,
-    gstType: 'With GST',
-    firstPaymentAmount: 15000,
-    firstPaymentDate: '2025-12-01',
-    paymentMode: 'Bank Transfer',
-    bankDetails: 'Insilicomics SBI',
-    finalPaymentAmount: 0,
-    finalPaymentDate: ''
-  },
-  {
-    id: 'S002',
-    name: 'Priya Das',
-    university: 'Bionome',
-    department: 'R&D',
-    email: 'priya.d@bionome.com',
-    phone: '+91 88776 65544',
-    office: 'Ooty',
-    address: 'Bengaluru',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    country: 'India',
-    enrollmentDate: '2026-01-05',
-    status: 'Active',
-    enrollmentType: 'Training',
-    mode: 'Online',
-    enrollmentNumber: 'BIO2026001',
-    totalFee: 15000,
-    gstType: 'Without GST',
-    firstPaymentAmount: 15000,
-    firstPaymentDate: '2026-01-05',
-    paymentMode: 'GPay',
-    bankDetails: 'Appa Personal SBI',
-    finalPaymentAmount: 0,
-    finalPaymentDate: ''
-  },
-  {
-    id: 'S003',
-    name: 'Rahul K.',
-    university: 'Bionome',
-    department: 'Bioinformatics',
-    email: 'rahul.k@gmail.com',
-    phone: '+91 77665 54433',
-    office: 'Ooty',
-    address: 'Bengaluru',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    country: 'India',
-    enrollmentDate: '2026-01-10',
-    status: 'Active',
-    enrollmentType: 'Internship',
-    mode: 'Hybrid',
-    enrollmentNumber: 'BIO2026002',
-    totalFee: 20000,
-    firstPaymentAmount: 10000,
-    firstPaymentDate: '2026-01-10',
-    finalPaymentAmount: 0,
-    finalPaymentDate: ''
-  }
-];
+export interface Payment {
+  id: string;
+  clientId: string;
+  projectIds?: string[];
+  studentIds?: string[];
+  date: string;
+  amount: number;
+  type: 'Common' | 'Project' | 'Advance' | 'Other';
+  description?: string;
+  paymentMode?: 'Cash' | 'Bank Transfer' | 'Cheque' | 'GPay' | 'PhonePe';
+  reference?: string;
+  gstType?: 'With GST' | 'Without GST';
+  office?: 'Ooty' | 'Coimbatore';
+  bankAccount?: string;
+}
 
 export const paymentModeOptions = ['Cash', 'Bank Transfer', 'Cheque', 'GPay', 'PhonePe'];
 
@@ -453,6 +392,6 @@ export const bankAccountOptions = {
   withoutGST: ['Vivek Personal SBI', 'Appa Personal SBI', 'Vinoth Personal SBI'],
   withGST: {
     Coimbatore: ['Insilicomics SBI', 'Insilicomics HDFC'],
-    Ooty: ['Insilicomics Research Pvt, Ltd']
+    Ooty: ['Axis Bank']
   }
 };

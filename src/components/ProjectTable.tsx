@@ -238,6 +238,8 @@ const OfficeCard = ({ title, stats, color, icon, isSelected, onClick }: { title:
     </Paper>
   );
 };
+import { type Server } from '../services/api';
+
 interface ProjectTableProps {
   projects: Project[];
   users: User[];
@@ -247,7 +249,7 @@ interface ProjectTableProps {
   onAddProject: (project: Project) => void;
   onUpdateProject: (project: Project) => void;
   onDeleteProject: (id: string) => void;
-  servers: any[];
+  servers: Server[];
 }
 
 const ProjectTable: React.FC<ProjectTableProps> = ({ 
@@ -280,8 +282,8 @@ const ProjectTable: React.FC<ProjectTableProps> = ({
   // Office Stats Calculation
   const getOfficeStats = (officeName: string) => {
     const officeProjects = projects.filter(p => p.office === officeName);
-    const totalValue = officeProjects.reduce((acc, p) => acc + p.totalFunding, 0);
-    const received = officeProjects.reduce((acc, p) => acc + (p.firstPaymentAmount || 0) + (p.finalPaymentAmount || 0), 0);
+    const totalValue = officeProjects.reduce((acc, p) => acc + (Number(p.totalFunding) || 0), 0);
+    const received = officeProjects.reduce((acc, p) => acc + (Number(p.firstPaymentAmount) || 0) + (Number(p.finalPaymentAmount) || 0), 0);
     
     return {
       total: officeProjects.length,
@@ -576,8 +578,8 @@ const ProjectTable: React.FC<ProjectTableProps> = ({
                 <TableCell>{row.lead}</TableCell>
                 <TableCell>{row.startDate}</TableCell>
                 <TableCell>₹{row.totalFunding.toLocaleString('en-IN')}</TableCell>
-                <TableCell sx={{ color: (row.totalFunding - (row.firstPaymentAmount || 0) - (row.finalPaymentAmount || 0)) > 0 ? 'error.main' : 'success.main', fontWeight: 600 }}>
-                  ₹{(row.totalFunding - (row.firstPaymentAmount || 0) - (row.finalPaymentAmount || 0)).toLocaleString('en-IN')}
+                <TableCell sx={{ color: ((Number(row.totalFunding) || 0) - (Number(row.firstPaymentAmount) || 0) - (Number(row.finalPaymentAmount) || 0)) > 0 ? 'error.main' : 'success.main', fontWeight: 600 }}>
+                  ₹{((Number(row.totalFunding) || 0) - (Number(row.firstPaymentAmount) || 0) - (Number(row.finalPaymentAmount) || 0)).toLocaleString('en-IN')}
                 </TableCell>
                 <TableCell>
                   <Chip 
@@ -639,7 +641,7 @@ const ProjectTable: React.FC<ProjectTableProps> = ({
         open={isActivitiesOpen}
         onClose={() => setIsActivitiesOpen(false)}
         project={activityProject}
-        onUpdateProject={onUpdateProject}
+        onUpdate={onUpdateProject}
         users={users}
         servers={servers}
       />

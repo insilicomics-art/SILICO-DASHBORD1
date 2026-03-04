@@ -30,7 +30,7 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { institutionColors, type Project, type Student } from '../data/mockData';
+import { institutionColors, type Project, type Student, type Payment, type ClientProfile } from '../data/mockData';
 import { 
   DollarSign, 
   FileText, 
@@ -45,6 +45,8 @@ interface InstitutionsAnalysisProps {
   projects: Project[];
   institutions: string[];
   students: Student[];
+  payments: Payment[];
+  clientProfiles: ClientProfile[];
 }
 
 const formatCurrency = (val: number) => {
@@ -55,7 +57,7 @@ const formatCurrency = (val: number) => {
   }).format(val);
 };
 
-const StatCard = ({ title, value, icon, color, subtitle, trend }: any) => (
+const StatCard = ({ title, value, icon, color, subtitle, trend }: { title: string; value: string | number; icon: React.ReactNode; color: string; subtitle?: string; trend?: string }) => (
   <Card sx={{ borderRadius: 2, border: '1px solid #e2e8f0', boxShadow: 'none', height: '100%', position: 'relative', overflow: 'hidden' }}>
     <Box sx={{ position: 'absolute', top: 0, right: 0, width: 80, height: 80, bgcolor: `${color}10`, borderRadius: '0 0 0 100%' }} />
     <CardContent sx={{ p: 3 }}>
@@ -72,26 +74,40 @@ const StatCard = ({ title, value, icon, color, subtitle, trend }: any) => (
   </Card>
 );
 
-const InstitutionsAnalysis: React.FC<InstitutionsAnalysisProps> = ({ projects, institutions, students }) => {
+const InstitutionsAnalysis: React.FC<InstitutionsAnalysisProps> = ({ projects, institutions, students, payments, clientProfiles }) => {
   const analysisData = useMemo(() => {
     return institutions.map(inst => {
       const instProjects = projects.filter(p => p.institution === inst);
       const instStudents = students.filter(s => s.university === inst);
       
+      // Filter payments for this institution via client profiles
+      const instPayments = payments.filter(pay => {
+          const client = clientProfiles.find(c => c.id === pay.clientId);
+          return client && client.university === inst;
+      });
+
       const totalProjects = instProjects.length;
       const totalStudents = instStudents.length;
 
       // Project Financials
-      const projectRevenue = instProjects.reduce((acc, p) => acc + p.totalFunding, 0);
-      const projectReceived = instProjects.reduce((acc, p) => acc + (p.firstPaymentAmount || 0) + (p.finalPaymentAmount || 0), 0);
+      const projectRevenue = instProjects.reduce((acc, p) => acc + (Number(p.totalFunding) || 0), 0);
+      const projectReceivedLegacy = instProjects.reduce((acc, p) => acc + (Number(p.firstPaymentAmount) || 0) + (Number(p.finalPaymentAmount) || 0), 0);
       
       // Student Financials
-      const studentRevenue = instStudents.reduce((acc, s) => acc + (s.totalFee || 0), 0);
-      const studentReceived = instStudents.reduce((acc, s) => acc + (s.firstPaymentAmount || 0) + (s.finalPaymentAmount || 0), 0);
+      const studentRevenue = instStudents.reduce((acc, s) => acc + (Number(s.totalFee) || 0), 0);
+      const studentReceivedLegacy = instStudents.reduce((acc, s) => acc + (Number(s.firstPaymentAmount) || 0) + (Number(s.finalPaymentAmount) || 0), 0);
+
+      // Payments from Table
+      const paymentsTableTotal = instPayments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
 
       const totalRevenue = projectRevenue + studentRevenue;
-      const totalReceived = projectReceived + studentReceived;
-      const totalPending = totalRevenue - totalReceived;
+      
+      // Total Received = Legacy fields (if used) + New Payment Table
+      // Assuming legacy fields are separate or 0 if migrated. 
+      // If legacy data exists AND we add payments in table, this sums them up.
+      const totalReceived = projectReceivedLegacy + studentReceivedLegacy + paymentsTableTotal;
+      
+      const totalPending = Math.max(0, totalRevenue - totalReceived);
 
       const avgProgress = totalProjects > 0 
         ? instProjects.reduce((acc, p) => acc + p.progress, 0) / totalProjects 
@@ -114,7 +130,7 @@ const InstitutionsAnalysis: React.FC<InstitutionsAnalysisProps> = ({ projects, i
         color: institutionColors[inst] || '#64748b'
       };
     }).sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [projects, institutions, students]);
+  }, [projects, institutions, students, payments, clientProfiles]);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -216,7 +232,7 @@ const InstitutionsAnalysis: React.FC<InstitutionsAnalysisProps> = ({ projects, i
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }} tickFormatter={(val) => `₹${val/100000}L`} />
                   <Tooltip 
                     contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} 
-                    formatter={(val: any) => formatCurrency(val)} 
+                    formatter={(val: number | string | undefined) => formatCurrency(Number(val || 0))} 
                   />
                   <Legend iconType="circle" wrapperStyle={{ paddingTop: 20 }} />
                   <Bar dataKey="totalReceived" name="Capital Realized" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} barSize={40} />
@@ -227,42 +243,31 @@ const InstitutionsAnalysis: React.FC<InstitutionsAnalysisProps> = ({ projects, i
           </Paper>
         </Grid>
         <Grid size={{ xs: 12, lg: 4 }}>
-          <Paper sx={{ p: 4, borderRadius: 2.5, border: '1px solid #e2e8f0', boxShadow: 'none', height: '100%' }}>
-            <Typography variant="h6" sx={{ fontWeight: 900, mb: 4 }}>Revenue Contribution</Typography>
-            <Box sx={{ height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%" minHeight={0}>
-                <PieChart>
-                  <Pie
-                    data={analysisData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={80}
-                    outerRadius={110}
-                    paddingAngle={8}
-                    dataKey="totalRevenue"
-                  >
-                    {analysisData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(val: any) => formatCurrency(val)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </Box>
-            <Stack spacing={2} sx={{ mt: 4 }}>
-              {analysisData.slice(0, 4).map((item, index) => (
-                <Box key={item.name} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Stack direction="row" spacing={1.5} alignItems="center">
-                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: COLORS[index % COLORS.length] }} />
-                    <Typography variant="caption" sx={{ fontWeight: 800 }}>{item.name}</Typography>
-                  </Stack>
-                  <Typography variant="caption" sx={{ fontWeight: 900, color: '#64748b' }}>
-                    {Math.round((item.totalRevenue / totalStats.totalRevenue) * 100)}%
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          </Paper>
+          <Stack spacing={4} sx={{ height: '100%' }}>
+            <Paper sx={{ p: 4, borderRadius: 2.5, border: '1px solid #e2e8f0', boxShadow: 'none', flex: 1 }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, mb: 4 }}>Revenue Contribution</Typography>
+              <Box sx={{ height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%" minHeight={0}>
+                  <PieChart>
+                    <Pie
+                      data={analysisData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="totalRevenue"
+                    >
+                      {analysisData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(val: number | string | undefined) => formatCurrency(Number(val || 0))} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Box>
+            </Paper>
+          </Stack>
         </Grid>
       </Grid>
 

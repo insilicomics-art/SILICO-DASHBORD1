@@ -1,4 +1,4 @@
-import type { Project, User, ClientProfile, Student } from '../data/mockData';
+import type { Project, User, ClientProfile, Student, Payment } from '../data/mockData';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -105,41 +105,52 @@ export const deleteStudent = async (id: string): Promise<void> => {
 };
 
 // Institutions (Clients in App state)
-// Stored as { id: string, name: string } in DB, but App uses string[]
-export const getInstitutions = async (): Promise<string[]> => {
+export interface Institution {
+  id: string;
+  name: string;
+  country: string;
+}
+
+export const getInstitutions = async (): Promise<Institution[]> => {
   const response = await fetch(`${API_URL}/institutions`);
   const data = await handleResponse(response);
-  return data.map((d: any) => d.name);
+  return data.map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    country: d.country || 'India'
+  }));
 };
 
-export const createInstitution = async (name: string): Promise<string> => {
+export const createInstitution = async (institution: Partial<Institution>): Promise<Institution> => {
   const response = await fetch(`${API_URL}/institutions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }), // Server generates ID
+    body: JSON.stringify(institution), 
   });
-  const data = await handleResponse(response);
-  return data.name;
+  return handleResponse(response);
 };
 
-export const deleteInstitution = async (name: string): Promise<void> => {
-  // Find ID first
-  const searchRes = await fetch(`${API_URL}/institutions?name=${encodeURIComponent(name)}`);
-  const searchData = await handleResponse(searchRes);
-  
-  if (searchData.length > 0) {
-    const response = await fetch(`${API_URL}/institutions/${searchData[0].id}`, {
-      method: 'DELETE',
-    });
-    return handleResponse(response);
-  }
+export const updateInstitution = async (institution: Institution): Promise<Institution> => {
+  const response = await fetch(`${API_URL}/institutions/${institution.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(institution),
+  });
+  return handleResponse(response);
+};
+
+export const deleteInstitution = async (id: string): Promise<void> => {
+  const response = await fetch(`${API_URL}/institutions/${id}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(response);
 };
 
 // Project Types
 export const getProjectTypes = async (): Promise<string[]> => {
   const response = await fetch(`${API_URL}/projectTypes`);
   const data = await handleResponse(response);
-  return data.map((d: any) => d.name);
+  return data.map((d: { id: string; name: string }) => d.name);
 };
 
 export const createProjectType = async (name: string): Promise<string> => {
@@ -165,11 +176,13 @@ export const deleteProjectType = async (name: string): Promise<void> => {
 };
 
 // Servers
+export type ServerStatus = 'Active' | 'Inactive' | 'Maintenance';
+
 export interface Server {
   id: string;
   name: string;
   specs: string;
-  status: 'Active' | 'Inactive' | 'Maintenance';
+  status: ServerStatus;
 }
 
 export const getServers = async (): Promise<Server[]> => {
@@ -228,6 +241,44 @@ export const updateClientProfile = async (profile: ClientProfile): Promise<Clien
 
 export const deleteClientProfile = async (id: string): Promise<void> => {
   const response = await fetch(`${API_URL}/clientProfiles/${id}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(response);
+};
+
+// Payments
+export const getPayments = async (clientId?: string): Promise<Payment[]> => {
+  const url = clientId 
+    ? `${API_URL}/payments?clientId=${clientId}`
+    : `${API_URL}/payments`;
+  const response = await fetch(url);
+  if (response.status === 404) {
+    console.warn("Payments endpoint not found (404). Defaulting to empty list.");
+    return [];
+  }
+  return handleResponse(response);
+};
+
+export const createPayment = async (payment: Payment): Promise<Payment> => {
+  const response = await fetch(`${API_URL}/payments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payment),
+  });
+  return handleResponse(response);
+};
+
+export const updatePayment = async (payment: Payment): Promise<Payment> => {
+  const response = await fetch(`${API_URL}/payments/${payment.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payment),
+  });
+  return handleResponse(response);
+};
+
+export const deletePayment = async (id: string): Promise<void> => {
+  const response = await fetch(`${API_URL}/payments/${id}`, {
     method: 'DELETE',
   });
   return handleResponse(response);

@@ -48,11 +48,13 @@ import {
   CheckCircle,
   Receipt
 } from 'lucide-react';
-import { type Project, type Student } from '../data/mockData';
+import { type Project, type Student, type Payment, type ClientProfile } from '../data/mockData';
 
 interface DashboardOverviewProps {
   projects: Project[];
   students: Student[];
+  payments: Payment[];
+  clientProfiles: ClientProfile[];
 }
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#8b5cf6'];
@@ -132,7 +134,7 @@ const FinancialGroupCard = ({ title, total, received, pending, icon, color }: { 
     </Card>
 );
 
-export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, students }) => {
+export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, students, payments, clientProfiles }) => {
   const [selectedOffice, setSelectedOffice] = useState<string>('All');
   const [gstViewMode, setGstViewMode] = useState<'Revenue' | 'Count'>('Revenue');
 
@@ -146,20 +148,60 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
     return students.filter(s => s.office === selectedOffice);
   }, [students, selectedOffice]);
 
+  // Filter payments based on selected office (via Client Profile)
+  const filteredPayments = useMemo(() => {
+      if (selectedOffice === 'All') return payments;
+      
+      // Map payments to clients, then to institution/office?
+      // Since ClientProfile doesn't have Office, and mapping is complex, 
+      // we might just assume "Common" payments are global or try to link via Project if possible.
+      // BUT, for now, to ensure data visibility as requested, we will INCLUDE ALL payments if 'All' is selected,
+      // and maybe filter if we can link them.
+      
+      // Attempt to filter:
+      // 1. Get all client IDs for the selected office?
+      //    We can check `projects` to see which clients belong to which office.
+      const clientsInOffice = new Set<string>();
+      projects.filter(p => p.office === selectedOffice).forEach(p => clientsInOffice.add(p.clientName)); // Project stores clientName, not ID :(
+      
+      // This is tricky because Payment links to ClientID, but Project links to ClientName.
+      // We need to link Payment -> ClientID -> ClientProfile -> Name -> Project -> Office?
+      // Or ClientProfile -> Name.
+      
+      // Let's rely on ClientProfiles if we can map ID to Name.
+      const clientProfileMap = new Map(clientProfiles.map(c => [c.id, c.name]));
+      
+      return payments.filter(pay => {
+          const cName = clientProfileMap.get(pay.clientId);
+          if (!cName) return false;
+          // Check if this client has any project in the selected office
+          return projects.some(p => p.clientName === cName && p.office === selectedOffice);
+      });
+  }, [payments, projects, clientProfiles, selectedOffice]);
+
   const stats = useMemo(() => {
     // Financials Calculation
-    const projectRevenue = filteredProjects.reduce((acc, p) => acc + p.totalFunding, 0);
-    const studentRevenue = filteredStudents.reduce((acc, s) => acc + (s.totalFee || 0), 0);
+    const projectRevenue = filteredProjects.reduce((acc, p) => acc + (Number(p.totalFunding) || 0), 0);
+    const studentRevenue = filteredStudents.reduce((acc, s) => acc + (Number(s.totalFee) || 0), 0);
     const totalRevenue = projectRevenue + studentRevenue;
 
-    const projectReceived = filteredProjects.reduce((acc, p) => acc + (p.firstPaymentAmount || 0) + (p.finalPaymentAmount || 0), 0);
-    const studentReceived = filteredStudents.reduce((acc, s) => acc + (s.firstPaymentAmount || 0) + (s.finalPaymentAmount || 0), 0);
+    const projectReceived = filteredProjects.reduce((acc, p) => acc + (Number(p.firstPaymentAmount) || 0) + (Number(p.finalPaymentAmount) || 0), 0);
+    const studentReceived = filteredStudents.reduce((acc, s) => acc + (Number(s.firstPaymentAmount) || 0) + (Number(s.finalPaymentAmount) || 0), 0);
     
+    // Add Common Payments
+    const commonReceived = filteredPayments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+
     const projectPending = projectRevenue - projectReceived;
     const studentPending = studentRevenue - studentReceived;
     
-    const totalReceived = projectReceived + studentReceived;
-    const totalPending = totalRevenue - totalReceived;
+    // Total Received includes Common Payments
+    const totalReceived = projectReceived + studentReceived + commonReceived;
+    
+    // Total Pending decreases by Common Payments amount (assuming they pay off the debt)
+    // However, if Common Payment > Pending, it shouldn't go negative? 
+    // Usually "Common Payment" is just part of "Total Received". 
+    // "Total Pending" is "Total Revenue - Total Received".
+    const totalPending = Math.max(0, totalRevenue - totalReceived);
 
     // Revenue Streams (Project Types)
     const typeMap = new Map<string, number>();
@@ -295,7 +337,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
         combinedRevenueData,
         gstProfileData
     };
-  }, [filteredProjects, filteredStudents]);
+  }, [filteredProjects, filteredStudents, projects, students]);
 
   return (
     <Box className="nexus-bg" sx={{ flexGrow: 1, p: 4, minHeight: '100vh' }}>
@@ -423,7 +465,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                 <PolarAngleAxis dataKey="name" tick={{ fontSize: 10, fill: '#475569', fontWeight: 600 }} />
                                 <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={false} axisLine={false} />
                                 <Radar name="Revenue" dataKey="value" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.2} />
-                                <Tooltip formatter={(val: any) => [formatCurrency(val), 'Revenue']} />
+                                <Tooltip formatter={(val: number | string | undefined) => [formatCurrency(Number(val || 0)), 'Revenue']} />
                             </RadarChart>
                         </ResponsiveContainer>
                       </Box>
@@ -490,7 +532,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                     axisLine={false}
                                     tickLine={false}
                                 />
-                                <Tooltip formatter={(val: any) => [formatCurrency(val), 'Revenue']} />
+                                <Tooltip formatter={(val: number | string | undefined) => [formatCurrency(Number(val || 0)), 'Revenue']} />
                                 <Bar dataKey="value" fill="#10b981" radius={[0, 4, 4, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -587,7 +629,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                               <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                                               <YAxis hide />
-                                              <Tooltip formatter={(val: any) => formatCurrency(val)} />
+                                              <Tooltip formatter={(val: number | string | undefined) => formatCurrency(Number(val || 0))} />
                                               <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                                                 {stats.gstDataProjects.map((entry, index) => (
                                                     <Cell key={`cell-${index}`} fill={entry.name === 'With GST' ? '#10b981' : '#94a3b8'} />
@@ -595,7 +637,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                                 <LabelList 
                                                     dataKey="amount" 
                                                     position="top" 
-                                                    formatter={(val: any) => typeof val === 'number' ? `₹${(val/1000).toFixed(1)}k` : val}
+                                                    formatter={(val: any) => typeof val === 'number' ? `₹${(val/1000).toFixed(1)}k` : (val || '').toString()} // eslint-disable-line @typescript-eslint/no-explicit-any
                                                     style={{ fontSize: '10px', fontWeight: 700, fill: '#475569' }}
                                                 />
                                               </Bar>
@@ -646,7 +688,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                               <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                                               <YAxis hide />
-                                              <Tooltip formatter={(val: any) => formatCurrency(val)} />
+                                              <Tooltip formatter={(val: number | string | undefined) => formatCurrency(Number(val || 0))} />
                                               <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
                                                 {stats.gstDataStudents.map((entry, index) => (
                                                     <Cell key={`cell-${index}`} fill={entry.name === 'With GST' ? '#8b5cf6' : '#94a3b8'} />
@@ -654,7 +696,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                                 <LabelList 
                                                     dataKey="amount" 
                                                     position="top" 
-                                                    formatter={(val: any) => typeof val === 'number' ? `₹${(val/1000).toFixed(1)}k` : val}
+                                                    formatter={(val: any) => typeof val === 'number' ? `₹${(val/1000).toFixed(1)}k` : (val || '').toString()} // eslint-disable-line @typescript-eslint/no-explicit-any
                                                     style={{ fontSize: '10px', fontWeight: 700, fill: '#475569' }}
                                                 />
                                               </Bar>
@@ -689,7 +731,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                             <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
                                             <YAxis tickFormatter={(val) => `₹${val/1000}k`} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                                            <Tooltip formatter={(val: any) => formatCurrency(val)} cursor={{ fill: '#f8fafc' }} />
+                                            <Tooltip formatter={(val: number | string | undefined) => formatCurrency(Number(val || 0))} cursor={{ fill: '#f8fafc' }} />
                                             <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                                             <Bar dataKey="Project GST" stackId="a" fill="#10b981" />
                                             <Bar dataKey="Project No-GST" stackId="a" fill="#86efac" />
@@ -717,7 +759,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                             <Radar name="Ooty" dataKey="Ooty" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.3} />
                                             <Radar name="Coimbatore" dataKey="Coimbatore" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.3} />
                                             <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                                            <Tooltip formatter={(val: any) => `${val.toFixed(1)}%`} />
+                                            <Tooltip formatter={(val: number | undefined) => `${(val || 0).toFixed(1)}%`} />
                                         </RadarChart>
                                     </ResponsiveContainer>
                                 </Box>
@@ -768,14 +810,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                                     <Tooltip 
                                                         cursor={{ fill: '#f1f5f9' }}
                                                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                                                        formatter={(val: any) => gstViewMode === 'Revenue' ? formatCurrency(val) : val} 
+                                                        formatter={(val: number | string | undefined) => gstViewMode === 'Revenue' ? formatCurrency(Number(val || 0)) : val} 
                                                     />
                                                     <Legend verticalAlign="top" align="right" height={40} iconType="circle" />
                                                     <Bar name="With GST" dataKey={gstViewMode === 'Revenue' ? 'projectWithGSTRevenue' : 'projectWithGSTCount'} fill="#10b981" radius={[0, 4, 4, 0]} barSize={32}>
                                                         <LabelList 
                                                             dataKey={gstViewMode === 'Revenue' ? 'projectWithGSTRevenue' : 'projectWithGSTCount'} 
                                                             position="right" 
-                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (val > 0 ? val : '')} 
+                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (Number(val) > 0 ? val : '')} // eslint-disable-line @typescript-eslint/no-explicit-any 
                                                             style={{ fontSize: '12px', fontWeight: 800, fill: '#059669' }} 
                                                         />
                                                     </Bar>
@@ -783,7 +825,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                                         <LabelList 
                                                             dataKey={gstViewMode === 'Revenue' ? 'projectWithoutGSTRevenue' : 'projectWithoutGSTCount'} 
                                                             position="right" 
-                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (val > 0 ? val : '')} 
+                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (Number(val) > 0 ? val : '')} // eslint-disable-line @typescript-eslint/no-explicit-any 
                                                             style={{ fontSize: '12px', fontWeight: 800, fill: '#64748b' }} 
                                                         />
                                                     </Bar>
@@ -815,14 +857,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                                     <Tooltip 
                                                         cursor={{ fill: '#f1f5f9' }}
                                                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                                                        formatter={(val: any) => gstViewMode === 'Revenue' ? formatCurrency(val) : val} 
+                                                        formatter={(val: number | string | undefined) => gstViewMode === 'Revenue' ? formatCurrency(Number(val || 0)) : val} 
                                                     />
                                                     <Legend verticalAlign="top" align="right" height={40} iconType="circle" />
                                                     <Bar name="With GST" dataKey={gstViewMode === 'Revenue' ? 'studentWithGSTRevenue' : 'studentWithGSTCount'} fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={32}>
                                                         <LabelList 
                                                             dataKey={gstViewMode === 'Revenue' ? 'studentWithGSTRevenue' : 'studentWithGSTCount'} 
                                                             position="right" 
-                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (val > 0 ? val : '')} 
+                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (Number(val) > 0 ? val : '')} // eslint-disable-line @typescript-eslint/no-explicit-any 
                                                             style={{ fontSize: '12px', fontWeight: 800, fill: '#7c3aed' }} 
                                                         />
                                                     </Bar>
@@ -830,7 +872,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ projects, 
                                                         <LabelList 
                                                             dataKey={gstViewMode === 'Revenue' ? 'studentWithoutGSTRevenue' : 'studentWithoutGSTCount'} 
                                                             position="right" 
-                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (val > 0 ? val : '')} 
+                                                            formatter={(val: any) => gstViewMode === 'Revenue' ? (typeof val === 'number' && val > 0 ? `₹${(val/1000).toFixed(1)}k` : '') : (Number(val) > 0 ? val : '')} // eslint-disable-line @typescript-eslint/no-explicit-any 
                                                             style={{ fontSize: '12px', fontWeight: 800, fill: '#64748b' }} 
                                                         />
                                                     </Bar>

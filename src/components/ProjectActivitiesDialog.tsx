@@ -39,20 +39,22 @@ import {
 import { type Project, type ProjectActivity, type User } from '../data/mockData';
 import { Avatar, Stack } from '@mui/material';
 
+import { type Server } from '../services/api';
+
 interface ProjectActivitiesDialogProps {
   open: boolean;
   onClose: () => void;
   project: Project | null;
-  onUpdateProject: (project: Project) => void;
+  onUpdate: (project: Project) => void;
   users: User[];
-  servers: any[];
+  servers: Server[];
 }
 
 const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
   open,
   onClose,
   project,
-  onUpdateProject,
+  onUpdate,
   users,
   servers
 }) => {
@@ -166,7 +168,7 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
         endDate: activityForm.endDate || '',
         totalAtoms: hideAtomsAndDuration ? 0 : (activityForm.totalAtoms || 0),
         status: activityForm.status as 'Pending' | 'In Progress' | 'Completed' | 'Failed',
-        simulationEngine: hideSimulationEngine ? 'Other' : (activityForm.simulationEngine as any),
+        simulationEngine: hideSimulationEngine ? 'Other' : (activityForm.simulationEngine as ProjectActivity['simulationEngine']),
         totalParticipants: (showParticipants) ? (activityForm.totalParticipants || 0) : 0,
         mode: isCourse ? (activityForm.mode || 'Offline') : undefined
       };
@@ -184,7 +186,7 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
       progress: totalProgress
     };
 
-    onUpdateProject(updatedProject);
+    onUpdate(updatedProject);
     resetForm();
   };
 
@@ -200,7 +202,7 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
         ...project,
         activities: (project.activities || []).filter(a => a.id !== activityId)
       };
-      onUpdateProject(updatedProject);
+      onUpdate(updatedProject);
     }
   };
 
@@ -437,7 +439,7 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
                       key={`cell-${index}`} 
                       fill={getStatusColor(entry.status)} 
                       cursor="pointer" 
-                      onClick={() => handleEditClick(entry as any)}
+                      onClick={() => handleEditClick(entry as ProjectActivity)}
                     />
                   ))}
                 </Bar>
@@ -478,8 +480,8 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
                   freeSolo
                   options={engineOptions}
                   value={activityForm.simulationEngine}
-                  onChange={(_, newValue) => setActivityForm({ ...activityForm, simulationEngine: newValue as any })}
-                  onInputChange={(_, newInputValue) => setActivityForm({ ...activityForm, simulationEngine: newInputValue as any })}
+                  onChange={(_, newValue) => setActivityForm({ ...activityForm, simulationEngine: newValue as ProjectActivity['simulationEngine'] })}
+                  onInputChange={(_, newInputValue) => setActivityForm({ ...activityForm, simulationEngine: newInputValue as ProjectActivity['simulationEngine'] })}
                   renderInput={(params) => (
                     <TextField {...params} label="Simulation Engine" fullWidth />
                   )}
@@ -565,7 +567,7 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
                   label="Mode"
                   fullWidth
                   value={activityForm.mode}
-                  onChange={(e) => setActivityForm({ ...activityForm, mode: e.target.value as any })}
+                  onChange={(e) => setActivityForm({ ...activityForm, mode: e.target.value as 'Online' | 'Offline' })}
                 >
                   <MenuItem value="Online">Online</MenuItem>
                   <MenuItem value="Offline">Offline</MenuItem>
@@ -578,7 +580,7 @@ const ProjectActivitiesDialog: React.FC<ProjectActivitiesDialogProps> = ({
                 label="Status"
                 fullWidth
                 value={activityForm.status}
-                onChange={(e) => setActivityForm({ ...activityForm, status: e.target.value as any })}
+                onChange={(e) => setActivityForm({ ...activityForm, status: e.target.value as 'Pending' | 'In Progress' | 'Completed' | 'Failed' })}
               >
                 <MenuItem value="Pending">Pending</MenuItem>
                 <MenuItem value="In Progress">In Progress</MenuItem>

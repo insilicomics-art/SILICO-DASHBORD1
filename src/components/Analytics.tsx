@@ -13,16 +13,15 @@ import {
   PieChart, Pie, Cell,
   Legend,
   AreaChart, Area,
-  ScatterChart, Scatter, ZAxis,
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   RadialBarChart, RadialBar
 } from 'recharts';
-import { institutionColors } from '../data/mockData';
-import type { Project, ClientProfile, Student } from '../data/mockData';
-import { 
-  Download, 
-  TrendingUp, 
-  BarChart3, 
+import { institutionColors, institutionCountries } from '../data/mockData';
+import type { Project, ClientProfile, Student, Payment } from '../data/mockData';
+import {
+  Download,
+  TrendingUp,
+  BarChart3,
   Clock,
   Zap,
   Activity,
@@ -33,6 +32,8 @@ interface AnalyticsProps {
   projects: Project[];
   clientProfiles: ClientProfile[];
   students: Student[];
+  payments: Payment[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   servers: any[];
 }
 
@@ -40,16 +41,28 @@ const formatCurrency = (val: number) => {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumSignificantDigits: 3 }).format(val);
 };
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const formatTooltipValue = (value: any) => formatCurrency(Number(value));
+
+interface CustomPayload {
+    value: number | string;
+    name: string;
+    color: string;
+    fill: string;
+    payload: unknown;
+}
+
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: CustomPayload[]; label?: string }) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = payload[0].payload as any;
     return (
       <Paper sx={{ p: 1.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', borderRadius: 0.5 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
           {label || data.name || data.title}
         </Typography>
-        {payload.map((entry: any, index: number) => {
-          let value = entry.value;
+        {payload.map((entry: CustomPayload, index: number) => {
+          const value = entry.value;
           let name = entry.name;
 
           if (name === 'uv') name = 'Progress';
@@ -82,7 +95,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
+const Analytics: React.FC<AnalyticsProps> = ({ projects, students, payments, clientProfiles }) => {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
 
@@ -92,9 +105,13 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
     const projectReceived = projects.reduce((sum, p) => sum + (p.firstPaymentAmount || 0) + (p.finalPaymentAmount || 0), 0);
     const studentFunding = students.reduce((sum, s) => sum + (s.totalFee || 0), 0);
     const studentReceived = students.reduce((sum, s) => sum + (s.firstPaymentAmount || 0) + (s.finalPaymentAmount || 0), 0);
+    
+    const commonReceived = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
     const totalFunding = projectFunding + studentFunding;
-    const totalReceived = projectReceived + studentReceived;
-    const totalPending = totalFunding - totalReceived;
+    const totalReceived = projectReceived + studentReceived + commonReceived;
+    const totalPending = Math.max(0, totalFunding - totalReceived);
+    
     const avgProgress = projects.reduce((sum, p) => sum + p.progress, 0) / (totalProjects || 1);
     const completedProjects = projects.filter(p => p.status === 'Completed').length;
     const successRate = (completedProjects / (totalProjects || 1)) * 100;
@@ -106,8 +123,7 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
       { label: 'Avg. Progress', value: `${avgProgress.toFixed(1)}%`, icon: <TrendingUp />, color: '#f59e0b' },
       { label: 'Success Rate', value: `${successRate.toFixed(1)}%`, icon: <Zap />, color: '#ec4899' }
     ];
-  }, [projects, students]);
-
+  }, [projects, students, payments]);
   const projectStatusData = useMemo(() => {
     const counts: Record<string, number> = {};
     projects.forEach(p => {
@@ -123,35 +139,13 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
     projects.forEach(p => {
       revenue[p.projectType] = (revenue[p.projectType] || 0) + p.totalFunding;
     });
-    return Object.entries(revenue)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
-  }, [projects]);
-
-  const projectTrendData = useMemo(() => {
-    const trends: Record<string, number> = {};
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          return Object.entries(revenue)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 8);
+      }, [projects]);
     
-    // Initialize current year months
-    const currentYear = new Date().getFullYear();
-    months.forEach(m => trends[`${m} ${currentYear}`] = 0);
-
-    projects.forEach(p => {
-      if (p.startDate) {
-        const date = new Date(p.startDate);
-        const key = `${months[date.getMonth()]} ${date.getFullYear()}`;
-        if (trends[key] !== undefined) {
-          trends[key]++;
-        }
-      }
-    });
-
-    return Object.entries(trends).map(([name, value]) => ({ name, value }));
-  }, [projects]);
-
-  const topInstitutionsData = useMemo(() => {
-    const revenue: Record<string, number> = {};
+      const topInstitutionsData = useMemo(() => {    const revenue: Record<string, number> = {};
     projects.forEach(p => {
       revenue[p.institution] = (revenue[p.institution] || 0) + p.totalFunding;
     });
@@ -187,14 +181,14 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
   }, [projects]);
 
   const serverEngineRadarData = useMemo(() => {
-      const engineMap: Record<string, any> = {};
+      const engineMap: Record<string, { subject: string; [key: string]: number | string }> = {};
       const serverSet = new Set<string>();
 
       projects.forEach(p => {
           p.activities?.forEach(a => {
               if (a.server && a.simulationEngine) {
                   if (!engineMap[a.simulationEngine]) engineMap[a.simulationEngine] = { subject: a.simulationEngine };
-                  engineMap[a.simulationEngine][a.server] = (engineMap[a.simulationEngine][a.server] || 0) + 1;
+                  engineMap[a.simulationEngine][a.server] = ((engineMap[a.simulationEngine][a.server] as number) || 0) + 1;
                   serverSet.add(a.server);
               }
           });
@@ -226,57 +220,77 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
       return Object.entries(trends).map(([name, value]) => ({ name, value }));
   }, [students]);
 
-  const avgValueByTypeData = useMemo(() => {
-      const totals: Record<string, { funding: number, count: number }> = {};
-      projects.forEach(p => {
-          if (!totals[p.projectType]) totals[p.projectType] = { funding: 0, count: 0 };
-          totals[p.projectType].funding += p.totalFunding;
-          totals[p.projectType].count += 1;
-      });
-      return Object.entries(totals)
-          .map(([name, { funding, count }]) => ({ name, value: Math.round(funding / count) }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 8);
-  }, [projects]);
-
-  const monthlyRevenueData = useMemo(() => {
-    const revenue: Record<string, number> = {};
+  const officeMonthlyRevenue = useMemo(() => {
+    const data: Record<string, { 
+        name: string; 
+        Ooty_WithGST: number; 
+        Ooty_WithoutGST: number; 
+        Coimbatore_WithGST: number; 
+        Coimbatore_WithoutGST: number; 
+        dateObj: Date 
+    }> = {};
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     
-    // Initialize current year months
-    const currentYear = new Date().getFullYear();
-    months.forEach(m => revenue[`${m} ${currentYear}`] = 0);
-
-    // Track both project payments and student fees
-    const addRevenue = (dateStr: string | undefined, amount: number | undefined) => {
-        if (!dateStr || !amount) return;
+    const process = (dateStr: string | undefined, amount: number | undefined, office: string, gstType: string | undefined) => {
+        if (!dateStr || !amount || !office) return;
         const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return;
+
         const key = `${months[date.getMonth()]} ${date.getFullYear()}`;
-        if (revenue[key] !== undefined) revenue[key] += amount;
+        if (!data[key]) {
+            data[key] = { 
+                name: key, 
+                Ooty_WithGST: 0, 
+                Ooty_WithoutGST: 0, 
+                Coimbatore_WithGST: 0, 
+                Coimbatore_WithoutGST: 0, 
+                dateObj: date 
+            };
+        }
+        
+        const isGST = gstType === 'With GST';
+        
+        if (office === 'Ooty') {
+            if (isGST) data[key].Ooty_WithGST += amount;
+            else data[key].Ooty_WithoutGST += amount;
+        } else if (office === 'Coimbatore') {
+            if (isGST) data[key].Coimbatore_WithGST += amount;
+            else data[key].Coimbatore_WithoutGST += amount;
+        }
     };
 
     projects.forEach(p => {
-        addRevenue(p.firstPaymentDate, p.firstPaymentAmount);
-        addRevenue(p.finalPaymentDate, p.finalPaymentAmount);
+        process(p.firstPaymentDate, p.firstPaymentAmount, p.office, p.gstType);
+        process(p.finalPaymentDate, p.finalPaymentAmount, p.office, p.gstType);
     });
 
     students.forEach(s => {
-        addRevenue(s.firstPaymentDate, s.firstPaymentAmount);
-        addRevenue(s.finalPaymentDate, s.finalPaymentAmount);
+        process(s.firstPaymentDate, s.firstPaymentAmount, s.office, s.gstType);
+        process(s.finalPaymentDate, s.finalPaymentAmount, s.office, s.gstType);
     });
 
-    return Object.entries(revenue).map(([name, value]) => ({ name, value }));
+    return Object.values(data).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
   }, [projects, students]);
 
-  const projectComplexityData = useMemo(() => {
-      // Scatter plot data: Funding vs Activity Count
-      return projects.map(p => ({
-          name: p.title.substring(0, 15) + '...',
-          x: p.totalFunding,
-          y: p.activities?.length || 0,
-          z: 100 // bubble size
-      })).filter(p => p.x > 0 && p.y > 0);
-  }, [projects]);
+  const gstDistributionData = useMemo(() => {
+      const data: Record<string, number> = { 'With GST': 0, 'Without GST': 0 };
+      const process = (amount: number | undefined, gst: string | undefined) => {
+          if (!amount) return;
+          const type = gst === 'With GST' ? 'With GST' : 'Without GST';
+          data[type] += amount;
+      };
+      
+      projects.forEach(p => {
+          process(p.firstPaymentAmount, p.gstType);
+          process(p.finalPaymentAmount, p.gstType);
+      });
+      students.forEach(s => {
+          process(s.firstPaymentAmount, s.gstType);
+          process(s.finalPaymentAmount, s.gstType);
+      });
+
+      return Object.entries(data).map(([name, value]) => ({ name, value }));
+  }, [projects, students]);
 
 
   const studentEnrollmentData = useMemo(() => {
@@ -310,6 +324,18 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
       })).sort((a, b) => b.students - a.students).slice(0, 10);
   }, [students]);
 
+  const studentsByCity = useMemo(() => {
+      const counts: Record<string, number> = {};
+      students.forEach(s => {
+          const city = s.city || 'Unknown';
+          counts[city] = (counts[city] || 0) + 1;
+      });
+      return Object.entries(counts)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10);
+  }, [students]);
+
   const paymentModeData = useMemo(() => {
     const counts: Record<string, number> = {};
     const addCount = (mode: string | undefined) => {
@@ -339,6 +365,32 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [projects, students]);
+
+  const countryRevenueData = useMemo(() => {
+    const revenue: Record<string, number> = {};
+    
+    // Process Projects
+    projects.forEach(p => {
+      let country = institutionCountries[p.institution];
+      if (!country) {
+          // Try to find client profile
+          const client = clientProfiles.find(c => c.name === p.clientName);
+          country = client?.country || 'India';
+      }
+      revenue[country] = (revenue[country] || 0) + p.totalFunding;
+    });
+
+    // Process Students
+    students.forEach(s => {
+      const country = s.country || 'India';
+      revenue[country] = (revenue[country] || 0) + s.totalFee;
+    });
+
+    return Object.entries(revenue)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  }, [projects, students, clientProfiles]);
 
   const studentColors = ['#f59e0b', '#ec4899', '#8b5cf6', '#0ea5e9', '#10b981', '#6366f1'];
 
@@ -476,6 +528,7 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
             }}>
               <Stack direction="row" spacing={2} alignItems="center">
                 <Avatar sx={{ bgcolor: `${kpi.color}15`, color: kpi.color, borderRadius: 1.5, width: 40, height: 40 }}>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {React.cloneElement(kpi.icon as React.ReactElement<any>, { size: 20, strokeWidth: 2.5 })}
                 </Avatar>
                 <Box>
@@ -489,49 +542,7 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
       </Grid>
 
       <Grid container spacing={3} className="print-row" sx={{ mt: 3 }}>
-        <Grid size={{ xs: 12, md: 8 }} className="print-col">
-            <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 400, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>Monthly Revenue Realization</Typography>
-                <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <AreaChart data={monthlyRevenueData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <Tooltip contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} formatter={(value: any) => formatCurrency(value)} />
-                            <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorRev)" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </Box>
-            </Paper>
-        </Grid>
         <Grid size={{ xs: 12, md: 4 }} className="print-col">
-            <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 400, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>Project Value vs. Complexity</Typography>
-                <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                            <XAxis type="number" dataKey="x" name="Funding" unit="₹" tickFormatter={(val) => `${val/1000}k`} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <YAxis type="number" dataKey="y" name="Activities" unit="" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <ZAxis type="number" dataKey="z" range={[100, 500]} />
-                            <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} formatter={(value: any, name: any) => [name === 'Funding' ? formatCurrency(value) : value, name]} />
-                            <Scatter name="Projects" data={projectComplexityData} fill="#8b5cf6" />
-                        </ScatterChart>
-                    </ResponsiveContainer>
-                </Box>
-            </Paper>
-        </Grid>
-      </Grid>
-
-      <Grid container spacing={3} className="print-row" sx={{ mt: 3 }}>
-        <Grid size={{ xs: 12, md: 3 }} className="print-col">
             <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 400, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                 <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>Project Pipeline</Typography>
                 <Box sx={{ flexGrow: 1, minHeight: 250 }}>
@@ -542,15 +553,14 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
                                     <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444'][index % 4]} />
                                 ))}
                             </Pie>
-                            <Tooltip contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                            <Tooltip contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} formatter={formatTooltipValue} />
                             <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 700, paddingTop: '20px' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
+                        </PieChart>                    </ResponsiveContainer>
                 </Box>
             </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 5 }} className="print-col">
+        <Grid size={{ xs: 12, md: 8 }} className="print-col">
             <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 400, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                 <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>Revenue by Domain</Typography>
                 <Box sx={{ flexGrow: 1, minHeight: 250 }}>
@@ -559,32 +569,9 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                             <XAxis type="number" hide />
                             <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#1e293b', fontSize: 10, fontWeight: 800 }} width={100} />
-                            <Tooltip contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} formatter={(value: any) => formatCurrency(value)} />
+                            <Tooltip contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} formatter={formatTooltipValue} />
                             <Bar dataKey="value" fill="#8b5cf6" radius={[0, 1, 1, 0]} barSize={24} />
                         </BarChart>
-                    </ResponsiveContainer>
-                </Box>
-            </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 4 }} className="print-col">
-            <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 400, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>Project Initiation Trend</Typography>
-                <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <AreaChart data={projectTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <Tooltip contentStyle={{ borderRadius: 0.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                            <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorValue)" />
-                        </AreaChart>
                     </ResponsiveContainer>
                 </Box>
             </Paper>
@@ -593,27 +580,39 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
 
       <Typography variant="caption" sx={{ fontWeight: 900, color: '#000', mb: 1, mt: 4, textTransform: 'uppercase', display: 'block' }}>Leadership & Strategy</Typography>
       <Grid container spacing={3} className="print-row">
-          <Grid size={{ xs: 12, md: 4 }} className="print-col">
-              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+          <Grid size={{ xs: 12, md: 6 }} className="print-col">
+              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 400, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Top Research Leads (Total Funding)</Typography>
-                  <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                      <ResponsiveContainer width="100%" height={250}>
-                          <BarChart data={topLeadsData} layout="vertical" margin={{ left: 40, right: 20 }}>
-                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                              <XAxis type="number" hide />
-                              <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#000', fontSize: 10, fontWeight: 700 }} width={100} />
-                              <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                              <Bar dataKey="value" fill="#3b82f6" radius={[0, 1, 1, 0]} barSize={20} />
-                          </BarChart>
+                  <Box sx={{ flexGrow: 1, minHeight: 300 }}>
+                      <ResponsiveContainer width="100%" height={300}>
+                          <PieChart>
+                              <Pie 
+                                data={topLeadsData} 
+                                cx="50%"
+                                cy="45%"
+                                innerRadius={60} 
+                                outerRadius={90} 
+                                paddingAngle={5} 
+                                dataKey="value" 
+                                stroke="none"
+                                label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
+                              >
+                                  {topLeadsData.map((_, index) => (
+                                      <Cell key={`cell-${index}`} fill={['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][index % 5]} />
+                                  ))}
+                              </Pie>
+                              <Tooltip formatter={formatTooltipValue} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                              <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+                          </PieChart>
                       </ResponsiveContainer>
                   </Box>
               </Paper>
           </Grid>
-          <Grid size={{ xs: 12, md: 4 }} className="print-col">
-              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+          <Grid size={{ xs: 12, md: 6 }} className="print-col">
+              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 400, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Activities Assigned To</Typography>
-                  <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                      <ResponsiveContainer width="100%" height={250}>
+                  <Box sx={{ flexGrow: 1, minHeight: 300 }}>
+                      <ResponsiveContainer width="100%" height={300}>
                           <BarChart data={activitiesByUserData} layout="vertical" margin={{ left: 40, right: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                               <XAxis type="number" hide />
@@ -625,52 +624,44 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
                   </Box>
               </Paper>
           </Grid>
-          <Grid size={{ xs: 12, md: 4 }} className="print-col">
-              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Avg. Project Value by Domain</Typography>
-                  <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                      <ResponsiveContainer width="100%" height={250}>
-                          <BarChart data={avgValueByTypeData} margin={{ left: 10, right: 20, bottom: 20 }}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="name" tick={{ fill: '#000', fontSize: 9, fontWeight: 700 }} interval={0} angle={-20} textAnchor="end" height={60} />
-                              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#000', fontSize: 9, fontWeight: 700 }} width={40} tickFormatter={(val) => `${val/1000}k`} />
-                              <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                              <Bar dataKey="value" fill="#f59e0b" radius={[1, 1, 0, 0]} barSize={30} />
-                          </BarChart>
-                      </ResponsiveContainer>
-                  </Box>
-              </Paper>
-          </Grid>
       </Grid>
 
       <Typography variant="caption" sx={{ fontWeight: 900, color: '#000', mb: 1, mt: 4, textTransform: 'uppercase', display: 'block' }}>Financial Operations</Typography>
       <Grid container spacing={3} className="print-row">
           <Grid size={{ xs: 12, md: 6 }} className="print-col">
-              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 400, display: 'flex', flexDirection: 'column' }}>
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                       <CreditCard size={16} />
                       <Typography variant="caption" fontWeight="900" sx={{ textTransform: 'uppercase' }}>Payment Mode Distribution</Typography>
                   </Stack>
-                  <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                      <ResponsiveContainer width="100%" height={250}>
+                  <Box sx={{ flexGrow: 1, minHeight: 300 }}>
+                      <ResponsiveContainer width="100%" height={300}>
                           <PieChart>
-                              <Pie data={paymentModeData} innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                              <Pie 
+                                  data={paymentModeData} 
+                                  innerRadius={60} 
+                                  outerRadius={100} 
+                                  paddingAngle={5} 
+                                  dataKey="value" 
+                                  stroke="none"
+                                  label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
+                              >
                                   {paymentModeData.map((_, index) => (
                                       <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][index % 5]} />
                                   ))}
                               </Pie>
                               <Tooltip content={<CustomTooltip />} />
-                              <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
+                              <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
                           </PieChart>
                       </ResponsiveContainer>
                   </Box>
               </Paper>
           </Grid>
           <Grid size={{ xs: 12, md: 6 }} className="print-col">
-              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 400, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Bank Account Usage</Typography>
-                  <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                      <ResponsiveContainer width="100%" height={250}>
+                  <Box sx={{ flexGrow: 1, minHeight: 300 }}>
+                      <ResponsiveContainer width="100%" height={300}>
                           <BarChart data={bankUsageData} layout="vertical" margin={{ left: 40, right: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                               <XAxis type="number" hide />
@@ -684,19 +675,122 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
           </Grid>
       </Grid>
 
-      <Typography variant="caption" sx={{ fontWeight: 900, color: '#000', mb: 1, mt: 4, textTransform: 'uppercase', display: 'block' }}>Student Analytics</Typography>
-      <Grid container spacing={3} className="print-row">
+      <Grid container spacing={3} className="print-row" sx={{ mt: 3 }}>
+        <Grid size={{ xs: 12, md: 8 }} className="print-col">
+            <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 'auto', minHeight: 600, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>Office-wise Monthly Revenue Trends</Typography>
+                
+                <Grid container spacing={3} sx={{ flexGrow: 1 }}>
+                    {/* Ooty (GST) */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2, height: 250 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 800, color: '#7c3aed', mb: 1, display: 'block' }}>OOTY (GST)</Typography>
+                            <ResponsiveContainer width="100%" height="90%">
+                                <BarChart data={officeMonthlyRevenue} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
+                                    <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '12px' }} formatter={(val: any) => [formatCurrency(Number(val)), 'Revenue']} labelStyle={{ fontWeight: 800, color: '#1e293b' }} />
+                                    <Bar dataKey="Ooty_WithGST" fill="#7c3aed" radius={[4, 4, 0, 0]} barSize={25} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </Box>
+                    </Grid>
+
+                    {/* Ooty (No GST) */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2, height: 250 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 800, color: '#c4b5fd', mb: 1, display: 'block' }}>OOTY (NO GST)</Typography>
+                            <ResponsiveContainer width="100%" height="90%">
+                                <BarChart data={officeMonthlyRevenue} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
+                                    <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '12px' }} formatter={(val: any) => [formatCurrency(Number(val)), 'Revenue']} labelStyle={{ fontWeight: 800, color: '#1e293b' }} />
+                                    <Bar dataKey="Ooty_WithoutGST" fill="#c4b5fd" radius={[4, 4, 0, 0]} barSize={25} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </Box>
+                    </Grid>
+
+                    {/* Coimbatore (GST) */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2, height: 250 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 800, color: '#059669', mb: 1, display: 'block' }}>COIMBATORE (GST)</Typography>
+                            <ResponsiveContainer width="100%" height="90%">
+                                <BarChart data={officeMonthlyRevenue} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
+                                    <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '12px' }} formatter={(val: any) => [formatCurrency(Number(val)), 'Revenue']} labelStyle={{ fontWeight: 800, color: '#1e293b' }} />
+                                    <Bar dataKey="Coimbatore_WithGST" fill="#059669" radius={[4, 4, 0, 0]} barSize={25} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </Box>
+                    </Grid>
+
+                    {/* Coimbatore (No GST) */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2, height: 250 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 800, color: '#6ee7b7', mb: 1, display: 'block' }}>COIMBATORE (NO GST)</Typography>
+                            <ResponsiveContainer width="100%" height="90%">
+                                <BarChart data={officeMonthlyRevenue} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val/1000}k`} />
+                                    <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontSize: '12px' }} formatter={(val: any) => [formatCurrency(Number(val)), 'Revenue']} labelStyle={{ fontWeight: 800, color: '#1e293b' }} />
+                                    <Bar dataKey="Coimbatore_WithoutGST" fill="#6ee7b7" radius={[4, 4, 0, 0]} barSize={25} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </Box>
+                    </Grid>
+                </Grid>
+            </Paper>
+        </Grid>
         <Grid size={{ xs: 12, md: 4 }} className="print-col">
-                           <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
-                <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Enrollment Types</Typography>
+            <Paper sx={{ p: 3, borderRadius: 2.5, border: '1.5px solid #e2e8f0', height: 400, display: 'flex', flexDirection: 'column', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 3, fontWeight: 1000, textTransform: 'uppercase', letterSpacing: 1.5, color: '#0f172a' }}>GST Revenue Distribution</Typography>
                 <Box sx={{ flexGrow: 1, minHeight: 250 }}>
                     <ResponsiveContainer width="100%" height={250}>
                         <PieChart>
-                            <Pie data={studentEnrollmentData} innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value" stroke="none">
+                            <Pie data={gstDistributionData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" stroke="none">
+                                <Cell fill="#3b82f6" />
+                                <Cell fill="#f59e0b" />
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 700, paddingTop: '20px' }} />
+                            <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+                                <tspan x="50%" dy="-1em" fontSize="24" fontWeight="bold" fill="#0f172a">{formatCurrency(gstDistributionData.reduce((sum, item) => sum + item.value, 0))}</tspan>
+                                <tspan x="50%" dy="1.5em" fontSize="12" fill="#64748b" fontWeight="600">Total Revenue</tspan>
+                            </text>
+                        </PieChart>
+                    </ResponsiveContainer>
+                </Box>
+            </Paper>
+        </Grid>
+      </Grid>
+
+      <Typography variant="caption" sx={{ fontWeight: 900, color: '#000', mb: 1, mt: 4, textTransform: 'uppercase', display: 'block' }}>Student Analytics</Typography>
+      <Grid container spacing={3} className="print-row">
+        <Grid size={{ xs: 12, md: 4 }} className="print-col">
+            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 450, display: 'flex', flexDirection: 'column' }}>
+                <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Enrollment Types</Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 350 }}>
+                    <ResponsiveContainer width="100%" height={350}>
+                        <PieChart>
+                            <Pie 
+                                data={studentEnrollmentData} 
+                                innerRadius={60} 
+                                outerRadius={90} 
+                                paddingAngle={5} 
+                                dataKey="value" 
+                                stroke="none"
+                                label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
+                            >
                                 {studentEnrollmentData.map((_, index) => (<Cell key={`cell-${index}`} fill={studentColors[index % studentColors.length]} />))}
                             </Pie>
                             <Tooltip content={<CustomTooltip />} />
-                            <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
+                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </Box>
@@ -704,18 +798,25 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
         </Grid>
 
          <Grid size={{ xs: 12, md: 4 }} className="print-col">
-                           <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 450, display: 'flex', flexDirection: 'column' }}>
                 <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Enrollment Mode</Typography>
-                <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                    <ResponsiveContainer width="100%" height={250}>
+                <Box sx={{ flexGrow: 1, minHeight: 350 }}>
+                    <ResponsiveContainer width="100%" height={350}>
                         <PieChart>
-                            <Pie data={studentModeData} innerRadius={0} outerRadius={60} dataKey="value" stroke="none">
+                            <Pie 
+                                data={studentModeData} 
+                                innerRadius={0} 
+                                outerRadius={90} 
+                                dataKey="value" 
+                                stroke="none"
+                                label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
+                            >
                                 {studentModeData.map((_, index) => (
                                     <Cell key={`cell-${index}`} fill={['#0ea5e9', '#6366f1', '#10b981'][index % 3]} />
                                 ))}
                             </Pie>
                             <Tooltip content={<CustomTooltip />} />
-                            <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
+                            <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
                         </PieChart>
                     </ResponsiveContainer>
                 </Box>
@@ -723,10 +824,10 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
         </Grid>
 
          <Grid size={{ xs: 12, md: 4 }} className="print-col">
-                           <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 450, display: 'flex', flexDirection: 'column' }}>
                 <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>By Institution</Typography>
-                <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                    <ResponsiveContainer width="100%" height={250}>
+                <Box sx={{ flexGrow: 1, minHeight: 350 }}>
+                    <ResponsiveContainer width="100%" height={350}>
                          <BarChart data={studentsByInstitution} layout="vertical" margin={{ left: 10, right: 20 }}>
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                             <XAxis type="number" hide />
@@ -741,10 +842,10 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
             </Paper>
         </Grid>
          <Grid size={{ xs: 12, md: 12 }} className="print-col">
-                           <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 350, display: 'flex', flexDirection: 'column' }}>
+            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 450, display: 'flex', flexDirection: 'column' }}>
                 <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Student Enrollment Trend</Typography>
-                <Box sx={{ flexGrow: 1, minHeight: 250 }}>
-                    <ResponsiveContainer width="100%" height={250}>
+                <Box sx={{ flexGrow: 1, minHeight: 350 }}>
+                    <ResponsiveContainer width="100%" height={350}>
                         <AreaChart data={studentTrendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="studentColor" x1="0" y1="0" x2="0" y2="1">
@@ -762,15 +863,75 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
                 </Box>
             </Paper>
         </Grid>
+         <Grid size={{ xs: 12, md: 12 }} className="print-col">
+            <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 450, display: 'flex', flexDirection: 'column' }}>
+                <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Student Distribution by City</Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 350 }}>
+                    <ResponsiveContainer width="100%" height={350}>
+                        <BarChart data={studentsByCity} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={30}>
+                                {studentsByCity.map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][index % 5]} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </Box>
+            </Paper>
+        </Grid>
+      </Grid>
+
+      <Typography variant="caption" sx={{ fontWeight: 900, color: '#000', mb: 1, mt: 4, textTransform: 'uppercase', display: 'block' }}>Global Operations</Typography>
+      <Grid container spacing={3} className="print-row">
+          <Grid size={{ xs: 12, md: 12 }} className="print-col">
+              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 500, display: 'flex', flexDirection: 'column' }}>
+                  <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Top Countries by Revenue</Typography>
+                  <Box sx={{ flexGrow: 1, minHeight: 400 }}>
+                      <ResponsiveContainer width="100%" height={400}>
+                          <BarChart data={countryRevenueData} layout="vertical" margin={{ left: 40, right: 40, top: 20, bottom: 20 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                              <XAxis type="number" hide />
+                              <YAxis 
+                                type="category" 
+                                dataKey="name" 
+                                axisLine={false} 
+                                tickLine={false} 
+                                tick={{ fill: '#0f172a', fontSize: 11, fontWeight: 700 }} 
+                                width={100} 
+                              />
+                              <Tooltip 
+                                cursor={{ fill: '#f8fafc' }}
+                                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                formatter={formatTooltipValue}
+                              />
+                              <Bar 
+                                dataKey="value" 
+                                fill="#3b82f6" 
+                                radius={[0, 4, 4, 0]} 
+                                barSize={32}
+                              >
+                                {countryRevenueData.map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={['#3b82f6', '#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#8b5cf6'][index % 10]} />
+                                ))}
+                              </Bar>
+                          </BarChart>
+                      </ResponsiveContainer>
+                  </Box>
+              </Paper>
+          </Grid>
       </Grid>
 
       <Typography variant="caption" sx={{ fontWeight: 900, color: '#000', mb: 1, mt: 4, textTransform: 'uppercase', display: 'block' }}>Infrastructure & Key Accounts</Typography>
       <Grid container spacing={3} className="print-row">
-          <Grid size={{ xs: 12, md: 6 }} className="print-col">
-              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 400, display: 'flex', flexDirection: 'column' }}>
+          <Grid size={{ xs: 12, md: 12 }} className="print-col">
+              <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #cbd5e1', height: 600, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="caption" fontWeight="900" sx={{ mb: 1, textTransform: 'uppercase' }}>Server Engine Profile</Typography>
-                  <Box sx={{ flexGrow: 1, minHeight: 300 }}>
-                      <ResponsiveContainer width="100%" height={300}>
+                  <Box sx={{ flexGrow: 1, minHeight: 500 }}>
+                      <ResponsiveContainer width="100%" height={500}>
                           <RadarChart cx="50%" cy="50%" outerRadius="80%" data={serverEngineRadarData.data}>
                               <PolarGrid />
                               <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
@@ -804,7 +965,7 @@ const Analytics: React.FC<AnalyticsProps> = ({ projects, students }) => {
                                   dataKey="value"
                               />
                               <Legend iconSize={10} layout="vertical" verticalAlign="middle" wrapperStyle={{ fontSize: '10px', fontWeight: 600 }} align="right" />
-                              <Tooltip formatter={(value: any) => formatCurrency(value)} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+                              <Tooltip formatter={formatTooltipValue} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
                           </RadialBarChart>
                       </ResponsiveContainer>
                   </Box>

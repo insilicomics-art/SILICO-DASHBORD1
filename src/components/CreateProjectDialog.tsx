@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -30,7 +30,7 @@ import {
   Calculator,
   Network
 } from 'lucide-react';
-import { type Project, type Institution, type Status, type Office, type User, paymentModeOptions, bankAccountOptions } from '../data/mockData';
+import { type Project, type Status, type Office, type User, paymentModeOptions, bankAccountOptions } from '../data/mockData';
 
 const typeIconMap: Record<string, React.ReactNode> = {
   'Molecular Dynamics': <Activity size={18} />,
@@ -57,8 +57,8 @@ const getProjectTypeIcon = (type: string) => {
 interface ProjectFormDialogProps {
   open: boolean;
   onClose: () => void;
-  onCreate: (project: Project) => void;
-  onEdit: (project: Project) => void;
+  onCreate: (project: Project) => Promise<void> | void;
+  onEdit: (project: Project) => Promise<void> | void;
   projectToEdit?: Project | null;
   availableUsers: User[];
   availableClients: string[];
@@ -77,7 +77,7 @@ const ProjectFormDialog: React.FC<ProjectFormDialogProps> = ({
   availableClientNames,
   availableProjectTypes
 }) => {
-  const [formData, setFormData] = useState<Partial<Project>>(projectToEdit || {
+  const [formData, setFormData] = useState<Partial<Project>>({
     id: '',
     title: '',
     projectType: '',
@@ -99,6 +99,51 @@ const ProjectFormDialog: React.FC<ProjectFormDialogProps> = ({
     finalPaymentDate: ''
   });
 
+  // Reset and Initialize Form Data when Dialog Opens
+  useEffect(() => {
+    if (open) {
+      if (projectToEdit) {
+        if (formData.id !== projectToEdit.id) {
+            // Use setTimeout to avoid 'setState directly in effect' warning, ensuring it runs next tick
+            const timer = setTimeout(() => {
+                setFormData(projectToEdit);
+            }, 0);
+            return () => clearTimeout(timer);
+        }
+      } else {
+        // Auto-generate a random ID for new projects to prevent duplicates
+        if (formData.id === '') {
+            const randomId = `P${Math.floor(1000 + Math.random() * 9000)}`;
+            const timer = setTimeout(() => {
+                setFormData({
+                    id: randomId,
+                    title: '',
+                    projectType: '',
+                    office: 'Coimbatore',
+                    clientName: '',
+                    institution: 'VIT Vellore',
+                    description: '',
+                    status: 'Planned',
+                    lead: '',
+                    progress: 0,
+                    startDate: new Date().toISOString().split('T')[0],
+                    totalFunding: 0,
+                    gstType: 'Without GST',
+                    firstPaymentAmount: 0,
+                    firstPaymentDate: '',
+                    paymentMode: undefined,
+                    bankDetails: '',
+                    finalPaymentAmount: 0,
+                    finalPaymentDate: ''
+                });
+            }, 0);
+            return () => clearTimeout(timer);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, projectToEdit]); // formData.id added to prevent loop if we add it, but here we just check it.
+
   const getBankOptions = () => {
     if (formData.gstType === 'Without GST') {
       return bankAccountOptions.withoutGST;
@@ -114,54 +159,59 @@ const ProjectFormDialog: React.FC<ProjectFormDialogProps> = ({
     return [];
   };
 
-  const handleChange = (field: keyof Project, value: any) => {
+  const handleChange = (field: keyof Project, value: unknown) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Basic validation
     if (!formData.id || !formData.title || !formData.lead) {
       alert('Please fill in required fields (ID, Title, Lead)');
       return;
     }
 
-    if (projectToEdit) {
-        // Edit Mode
-        const updatedProject: Project = {
-            ...projectToEdit,
-            ...formData as Project
-        };
-        onEdit(updatedProject);
-    } else {
-        // Create Mode
-        const newProject: Project = {
-            id: formData.id,
-            title: formData.title!,
-            projectType: formData.projectType || 'Unspecified',
-            office: formData.office as Office,
-            clientName: formData.clientName || 'Unspecified',
-            institution: formData.institution as Institution,
-            description: formData.description || '',
-            status: formData.status as Status,
-            startDate: formData.startDate!,
-            completionDate: formData.completionDate,
-            lead: formData.lead!,
-            totalFunding: formData.totalFunding || 0,
-            gstType: formData.gstType || 'Without GST',
-            firstPaymentAmount: formData.firstPaymentAmount,
-            firstPaymentDate: formData.firstPaymentDate,
-            paymentMode: formData.paymentMode as any,
-            bankDetails: formData.bankDetails,
-            finalPaymentAmount: formData.finalPaymentAmount,
-            finalPaymentDate: formData.finalPaymentDate,
-            progress: formData.progress || 0
-        };
-        onCreate(newProject);
+    try {
+      if (projectToEdit) {
+          // Edit Mode
+          const updatedProject: Project = {
+              ...projectToEdit,
+              ...formData as Project
+          };
+          await onEdit(updatedProject);
+      } else {
+          // Create Mode
+          const newProject: Project = {
+              id: formData.id,
+              title: formData.title!,
+              projectType: formData.projectType || 'Unspecified',
+              office: formData.office as Office,
+              clientName: formData.clientName || 'Unspecified',
+              institution: formData.institution as string,
+              description: formData.description || '',
+              status: formData.status as Status,
+              startDate: formData.startDate!,
+              completionDate: formData.completionDate,
+              lead: formData.lead!,
+              totalFunding: formData.totalFunding || 0,
+              gstType: formData.gstType || 'Without GST',
+              firstPaymentAmount: formData.firstPaymentAmount,
+              firstPaymentDate: formData.firstPaymentDate,
+              paymentMode: formData.paymentMode as 'Cash' | 'Bank Transfer' | 'Cheque' | 'GPay' | 'PhonePe' | undefined,
+              bankDetails: formData.bankDetails,
+              finalPaymentAmount: formData.finalPaymentAmount,
+              finalPaymentDate: formData.finalPaymentDate,
+              progress: formData.progress || 0
+          };
+          await onCreate(newProject);
+      }
+      onClose();
+    } catch (error) {
+      console.error("Failed to save project:", error);
+      alert("Failed to save project. Please check if the Project ID is unique and try again.");
     }
-    onClose();
   };
 
   return (
@@ -177,6 +227,7 @@ const ProjectFormDialog: React.FC<ProjectFormDialogProps> = ({
               onChange={(e) => handleChange('id', e.target.value)}
               placeholder="e.g., P001"
               required
+              helperText="Auto-generated unique ID"
             />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>

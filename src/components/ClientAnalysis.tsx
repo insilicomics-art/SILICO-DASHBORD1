@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Paper,
@@ -17,7 +17,13 @@ import {
   TableHead,
   TableRow,
   Button,
-  Grid
+  Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -31,7 +37,10 @@ import {
   Printer,
   ShieldCheck,
   Fingerprint,
-  CheckCircle2
+  CheckCircle2,
+  Plus,
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -46,24 +55,85 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { type ClientProfile, type Project } from '../data/mockData';
+import { type ClientProfile, type Project, type Payment, paymentModeOptions, bankAccountOptions } from '../data/mockData';
 
 interface ClientAnalysisProps {
   client: ClientProfile;
   projects: Project[];
+  payments: Payment[];
+  onAddPayment: (payment: Payment) => void;
+  onUpdatePayment: (payment: Payment) => void;
+  onDeletePayment: (id: string) => void;
   onBack: () => void;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBack }) => {
+const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ 
+  client, 
+  projects, 
+  payments, 
+  onAddPayment, 
+  onUpdatePayment, 
+  onDeletePayment, 
+  onBack 
+}) => {
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [paymentFormData, setPaymentFormData] = useState<Partial<Payment>>({
+    clientId: client.id,
+    date: new Date().toISOString().split('T')[0],
+    amount: 0,
+    type: 'Common',
+    description: '',
+    paymentMode: 'Cash',
+    gstType: 'Without GST',
+    bankAccount: '',
+    office: undefined
+  });
+
+  const availableBankAccounts = useMemo(() => {
+    if (paymentFormData.gstType === 'Without GST') {
+        return bankAccountOptions.withoutGST;
+    } else if (paymentFormData.gstType === 'With GST') {
+        if (paymentFormData.office === 'Coimbatore') return bankAccountOptions.withGST.Coimbatore;
+        if (paymentFormData.office === 'Ooty') return bankAccountOptions.withGST.Ooty;
+    }
+    return [];
+  }, [paymentFormData.gstType, paymentFormData.office]);
+
   const clientProjects = useMemo(() => 
     projects.filter(p => p.clientName === client.name),
     [client, projects]
   );
 
+  const clientPayments = useMemo(() => 
+    payments.filter(p => p.clientId === client.id),
+    [client, payments]
+  );
+
   const stats = useMemo(() => {
-    const totalFunding = clientProjects.reduce((acc, p) => acc + p.totalFunding, 0);
+    let totalFunding = 0;
+    let totalProjectReceived = 0;
+    
+    // Project based calculations
+    clientProjects.forEach(p => {
+      const funding = Number(p.totalFunding) || 0;
+      const received1 = Number(p.firstPaymentAmount) || 0;
+      const received2 = Number(p.finalPaymentAmount) || 0;
+      totalFunding += funding;
+      totalProjectReceived += (received1 + received2);
+    });
+
+    // Common/Extra payments
+    const totalCommonPayments = clientPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+    
+    // Total Received = Project Specific + Common
+    const totalReceived = totalProjectReceived + totalCommonPayments;
+    
+    // Pending = Total Funding - Total Received
+    const totalPending = Math.max(0, totalFunding - totalReceived);
+
     const activeProjects = clientProjects.filter(p => p.status === 'Ongoing').length;
     const completedProjects = clientProjects.filter(p => p.status === 'Completed').length;
     
@@ -82,7 +152,7 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
         title: p.title
       }));
 
-    const typeDistribution = clientProjects.reduce((acc: any[], p) => {
+    const typeDistribution = clientProjects.reduce((acc: { name: string; value: number }[], p) => {
       const existing = acc.find(item => item.name === p.projectType);
       if (existing) {
         existing.value += 1;
@@ -95,13 +165,16 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
     return {
       totalProjects: clientProjects.length,
       totalFunding,
+      totalReceived,
+      totalPending,
+      totalCommonPayments,
       activeProjects,
       completedProjects,
       statusDistribution,
       fundingOverTime,
       typeDistribution
     };
-  }, [clientProjects]);
+  }, [clientProjects, clientPayments]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -112,6 +185,50 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
   };
 
   const handlePrint = () => window.print();
+
+  const handleOpenPaymentDialog = (payment?: Payment) => {
+    if (payment) {
+      setPaymentFormData(payment);
+      setEditingPaymentId(payment.id);
+    } else {
+      setPaymentFormData({
+        clientId: client.id,
+        date: new Date().toISOString().split('T')[0],
+        amount: 0,
+        type: 'Common',
+        description: '',
+        paymentMode: 'Cash',
+        gstType: 'Without GST',
+        bankAccount: '',
+        office: undefined
+      });
+      setEditingPaymentId(null);
+    }
+    setIsPaymentDialogOpen(true);
+  };
+
+  const handlePaymentSubmit = () => {
+    if (!paymentFormData.amount || !paymentFormData.date) {
+      alert('Amount and Date are required');
+      return;
+    }
+
+    const paymentData = {
+        ...paymentFormData,
+        clientId: client.id, // Ensure it's linked to current client
+        amount: Number(paymentFormData.amount)
+    } as Payment;
+
+    if (editingPaymentId) {
+      onUpdatePayment({ ...paymentData, id: editingPaymentId });
+    } else {
+      onAddPayment({
+        ...paymentData,
+        id: `PAY${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`
+      });
+    }
+    setIsPaymentDialogOpen(false);
+  };
 
   return (
     <Box sx={{ 
@@ -125,7 +242,10 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
         '& .print-only': { display: 'block !important' }
       }
     }}>
-      {/* --- PAGE 1: PREMIUM COVER PAGE --- */}
+      {/* ... (Cover Page and TOC kept same, simplified for brevity in replacement but full content should be preserved if I use replace tool carefully. 
+           Since I am rewriting the whole file to add logic deeply, I will include the full existing render logic + new payment section)
+      */}
+       {/* --- PAGE 1: PREMIUM COVER PAGE --- */}
       <Box className="print-only" sx={{ 
         display: 'none', 
         height: '296mm', 
@@ -138,8 +258,8 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
         overflow: 'hidden',
         pageBreakAfter: 'always'
       }}>
-        {/* Background Geometric Elements */}
-        <Box sx={{ position: 'absolute', top: -100, right: -100, width: 600, height: 600, borderRadius: 3, bgcolor: '#0ea5e9', opacity: 0.03 }} />
+         {/* Background Geometric Elements */}
+         <Box sx={{ position: 'absolute', top: -100, right: -100, width: 600, height: 600, borderRadius: 3, bgcolor: '#0ea5e9', opacity: 0.03 }} />
         <Box sx={{ position: 'absolute', bottom: -150, left: -150, width: 500, height: 500, borderRadius: 3, border: '40px solid rgba(14, 165, 233, 0.05)' }} />
         
         <Box sx={{ height: '45%', bgcolor: '#0f172a', color: '#fff', p: 10, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -392,10 +512,12 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
 
           {/* Right Column: Analysis & Plots */}
           <Box>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3, mb: 4 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: '1fr 1fr 1fr' }, gap: 3, mb: 4 }}>
               {[
                 { label: 'Total Portfolio', value: stats.totalProjects, icon: <FileText size={24} />, color: '#3b82f6' },
                 { label: 'Managed Capital', value: formatCurrency(stats.totalFunding), icon: <DollarSign size={24} />, color: '#10b981' },
+                { label: 'Total Received', value: formatCurrency(stats.totalReceived), icon: <CheckCircle2 size={24} />, color: '#10b981' },
+                { label: 'Pending Payment', value: formatCurrency(stats.totalPending), icon: <DollarSign size={24} />, color: '#ef4444' },
                 { label: 'Active Cycles', value: stats.activeProjects, icon: <TrendingUp size={24} />, color: '#0ea5e9' },
                 { label: 'Verified Success', value: stats.completedProjects, icon: <CheckCircle2 size={24} />, color: '#8b5cf6' },
               ].map((stat, idx) => (
@@ -444,7 +566,7 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
                     />
                     <Tooltip 
                       contentStyle={{ borderRadius: 1.5, border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', padding: '12px' }}
-                      formatter={(val: any) => [formatCurrency(val), 'Capital']}
+                      formatter={(val: number | string | undefined) => [formatCurrency(Number(val || 0)), 'Capital']}
                     />
                     <Line 
                       type="monotone" 
@@ -485,6 +607,76 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
             </Box>
 
             <Paper className="page-break" sx={{ p: 0, borderRadius: 0.5, border: '1.5px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)', mt: { '@media print': 4 }, overflow: 'hidden' }}>
+              <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9', bgcolor: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 1000, display: 'block', textTransform: 'uppercase', letterSpacing: 2, color: '#0f172a' }}>Payment Collection</Typography>
+                <Button 
+                    startIcon={<Plus size={16} />} 
+                    variant="contained" 
+                    size="small"
+                    onClick={() => handleOpenPaymentDialog()}
+                    className="no-print"
+                >
+                    Add Payment
+                </Button>
+              </Box>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: '#fff' }}>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>DATE</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>TYPE</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>DESCRIPTION</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>MODE</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>ACCOUNT</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>AMOUNT (INR)</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }} className="no-print">ACTIONS</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {clientPayments.map((p, idx) => (
+                      <TableRow key={p.id} hover sx={{ bgcolor: idx % 2 === 0 ? 'transparent' : 'rgba(248, 250, 252, 0.4)' }}>
+                        <TableCell sx={{ fontWeight: 600 }}>{p.date}</TableCell>
+                        <TableCell>
+                             <Chip label={p.type} size="small" sx={{ fontWeight: 700, fontSize: '0.7rem', height: 22, bgcolor: '#f1f5f9', color: '#475569' }} />
+                        </TableCell>
+                        <TableCell sx={{ color: '#475569' }}>{p.description || '-'}</TableCell>
+                        <TableCell sx={{ color: '#475569' }}>{p.paymentMode}</TableCell>
+                        <TableCell sx={{ color: '#475569' }}>
+                            {p.bankAccount ? (
+                                <Stack spacing={0.5}>
+                                    <Typography variant="caption" fontWeight="700">{p.bankAccount}</Typography>
+                                    <Typography variant="caption" color="textSecondary">{p.gstType}</Typography>
+                                </Stack>
+                            ) : '-'}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800, color: '#10b981' }}>
+                          {formatCurrency(p.amount)}
+                        </TableCell>
+                        <TableCell align="center" className="no-print">
+                            <Stack direction="row" spacing={1} justifyContent="center">
+                                <IconButton size="small" onClick={() => handleOpenPaymentDialog(p)} sx={{ color: '#3b82f6' }}>
+                                    <Pencil size={14} />
+                                </IconButton>
+                                <IconButton size="small" onClick={() => onDeletePayment(p.id)} sx={{ color: '#ef4444' }}>
+                                    <Trash2 size={14} />
+                                </IconButton>
+                            </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {clientPayments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                          <Typography color="textSecondary" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>No payments recorded yet.</Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+
+            <Paper className="page-break" sx={{ p: 0, borderRadius: 0.5, border: '1.5px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)', mt: 4, overflow: 'hidden' }}>
               <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9', bgcolor: '#f8fafc' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 1000, display: 'block', textTransform: 'uppercase', letterSpacing: 2, color: '#0f172a' }}>Certified Research Inventory</Typography>
               </Box>
@@ -586,6 +778,120 @@ const ClientAnalysis: React.FC<ClientAnalysisProps> = ({ client, projects, onBac
             </Box>
           </Box>
         </Box>
+
+        {/* Payment Dialog */}
+        <Dialog open={isPaymentDialogOpen} onClose={() => setIsPaymentDialogOpen(false)}>
+            <DialogTitle>{editingPaymentId ? 'Edit Payment' : 'Record New Payment'}</DialogTitle>
+            <DialogContent>
+                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            label="Date"
+                            type="date"
+                            fullWidth
+                            value={paymentFormData.date}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, date: e.target.value })}
+                        />
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            label="Amount (INR)"
+                            type="number"
+                            fullWidth
+                            value={paymentFormData.amount}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, amount: Number(e.target.value) })}
+                        />
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
+                         <TextField
+                            select
+                            label="Payment Type"
+                            fullWidth
+                            value={paymentFormData.type}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, type: e.target.value as Payment['type'] })}
+                        >
+                            <MenuItem value="Common">Common</MenuItem>
+                            <MenuItem value="Project">Project</MenuItem>
+                            <MenuItem value="Advance">Advance</MenuItem>
+                            <MenuItem value="Other">Other</MenuItem>
+                        </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
+                         <TextField
+                            select
+                            label="Payment Mode"
+                            fullWidth
+                            value={paymentFormData.paymentMode}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, paymentMode: e.target.value as Payment['paymentMode'] })}
+                        >
+                            {paymentModeOptions.map((mode) => (
+                                <MenuItem key={mode} value={mode}>{mode}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Grid>
+                    
+                    {/* GST and Banking Logic */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            select
+                            label="GST Type"
+                            fullWidth
+                            value={paymentFormData.gstType || 'Without GST'}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, gstType: e.target.value as any, office: undefined, bankAccount: '' })}
+                        >
+                            <MenuItem value="Without GST">Without GST</MenuItem>
+                            <MenuItem value="With GST">With GST</MenuItem>
+                        </TextField>
+                    </Grid>
+
+                    {paymentFormData.gstType === 'With GST' && (
+                        <Grid size={{ xs: 12, md: 6 }}>
+                            <TextField
+                                select
+                                label="Office"
+                                fullWidth
+                                value={paymentFormData.office || ''}
+                                onChange={(e) => setPaymentFormData({ ...paymentFormData, office: e.target.value as any, bankAccount: '' })}
+                            >
+                                <MenuItem value="Ooty">Ooty</MenuItem>
+                                <MenuItem value="Coimbatore">Coimbatore</MenuItem>
+                            </TextField>
+                        </Grid>
+                    )}
+
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            select
+                            label="Bank Account"
+                            fullWidth
+                            value={paymentFormData.bankAccount || ''}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, bankAccount: e.target.value })}
+                            disabled={!availableBankAccounts.length}
+                        >
+                            {availableBankAccounts.map((account) => (
+                                <MenuItem key={account} value={account}>{account}</MenuItem>
+                            ))}
+                            {availableBankAccounts.length === 0 && <MenuItem value="">Select GST/Office first</MenuItem>}
+                        </TextField>
+                    </Grid>
+
+                     <Grid size={{ xs: 12 }}>
+                        <TextField
+                            label="Description"
+                            fullWidth
+                            multiline
+                            rows={2}
+                            value={paymentFormData.description}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, description: e.target.value })}
+                        />
+                    </Grid>
+                </Grid>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setIsPaymentDialogOpen(false)}>Cancel</Button>
+                <Button variant="contained" onClick={handlePaymentSubmit}>Save Payment</Button>
+            </DialogActions>
+        </Dialog>
       </Box>
     </Box>
   );

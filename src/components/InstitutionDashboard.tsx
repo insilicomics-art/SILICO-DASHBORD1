@@ -18,7 +18,14 @@ import {
   LinearProgress,
   Grid,
   Card,
-  CardContent
+  CardContent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  Menu
 } from '@mui/material';
 import { 
   Tooltip, 
@@ -37,12 +44,14 @@ import {
   Area,
   Cell
 } from 'recharts';
-import { institutionColors, type Project, type User, type Student } from '../data/mockData';
+import { downloadCSV } from '../utils/csvExport';
+import { institutionColors, type Project, type User, type Student, type Payment, type ClientProfile, paymentModeOptions, bankAccountOptions } from '../data/mockData';
 import ProjectActivitiesDialog from './ProjectActivitiesDialog';
 import { 
   DollarSign, 
   FileText, 
   Printer, 
+  Download,
   ChevronLeft, 
   TrendingUp, 
   GraduationCap, 
@@ -58,7 +67,10 @@ import {
   CheckCircle2,
   Lock,
   History,
-  MapPin
+  MapPin,
+  Plus,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
 // --- Sub-components ---
@@ -133,9 +145,14 @@ interface InstitutionDashboardProps {
   projects: Project[];
   students: Student[];
   users: User[];
+  payments: Payment[];
+  clientProfiles: ClientProfile[];
   onUpdateProject: (project: Project) => void;
   onBack?: () => void;
   servers: any[];
+  onAddPayment?: (payment: Payment) => void;
+  onUpdatePayment?: (payment: Payment) => void;
+  onDeletePayment?: (id: string) => void;
 }
 
 const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
@@ -143,27 +160,157 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
   projects, 
   students,
   users,
+  payments,
+  clientProfiles,
   onUpdateProject,
   onBack,
-  servers
+  servers,
+  onAddPayment,
+  onUpdatePayment,
+  onDeletePayment
 }) => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
+  
+  const defaultClientProfile = useMemo(() => clientProfiles.find(c => c.university === institutionName), [clientProfiles, institutionName]);
+
+  const [paymentFormData, setPaymentFormData] = useState<Partial<Payment>>({
+    clientId: defaultClientProfile?.id || '',
+    projectIds: [],
+    studentIds: [],
+    date: new Date().toISOString().split('T')[0],
+    amount: 0,
+    type: 'Common',
+    description: '',
+    paymentMode: 'Cash',
+    gstType: 'Without GST',
+    bankAccount: '',
+    office: undefined
+  });
+
+  const availableBankAccounts = useMemo(() => {
+    if (paymentFormData.gstType === 'Without GST') {
+        return bankAccountOptions.withoutGST;
+    } else if (paymentFormData.gstType === 'With GST') {
+        if (paymentFormData.office === 'Coimbatore') return bankAccountOptions.withGST.Coimbatore;
+        if (paymentFormData.office === 'Ooty') return bankAccountOptions.withGST.Ooty;
+    }
+    return [];
+  }, [paymentFormData.gstType, paymentFormData.office]);
+
+  const handleExportProjects = () => {
+    const data = stats.instProjects.map(p => ({
+      "Reference ID": p.id,
+      "Title": p.title,
+      "Lead Investigator": p.lead,
+      "Project Type": p.projectType,
+      "Target/Domain": p.scientificDetails?.targetProtein || '-',
+      "Total Funding": p.totalFunding,
+      "Progress (%)": p.progress,
+      "Status": p.status,
+      "Start Date": p.startDate
+    }));
+    downloadCSV(data, `${institutionName}_Projects_Report.csv`);
+    setExportMenuAnchor(null);
+  };
+
+  const handleExportStudents = () => {
+    const data = stats.instStudents.map(s => ({
+      "Name": s.name,
+      "Enrollment ID": s.enrollmentNumber,
+      "Email": s.email,
+      "Department": s.department,
+      "Program Type": s.enrollmentType,
+      "Total Fee": s.totalFee,
+      "City": s.city,
+      "Status": s.status
+    }));
+    downloadCSV(data, `${institutionName}_Students_Report.csv`);
+    setExportMenuAnchor(null);
+  };
+
+  const handleExportPayments = () => {
+    const data = stats.instPayments.map(p => ({
+      "Payment ID": p.id,
+      "Date": p.date,
+      "Type": p.type,
+      "Associated Projects": p.projectIds ? p.projectIds.map(pid => projects.find(proj => proj.id === pid)?.title || pid).join('; ') : '',
+      "Associated Students": p.studentIds ? p.studentIds.map(sid => students.find(std => std.id === sid)?.name || sid).join('; ') : '',
+      "Amount": p.amount,
+      "Payment Mode": p.paymentMode,
+      "Description": p.description,
+      "Bank Account": p.bankAccount || '-',
+      "GST Type": p.gstType || '-'
+    }));
+    downloadCSV(data, `${institutionName}_Payments_Report.csv`);
+    setExportMenuAnchor(null);
+  };
 
   const stats = useMemo(() => {
     const instProjects = projects.filter(p => p.institution === institutionName);
     const instStudents = students.filter(s => s.university === institutionName);
     
-    // Project Financials
-    const totalFunding = instProjects.reduce((acc, p) => acc + p.totalFunding, 0);
-    const totalReceived = instProjects.reduce((acc, p) => acc + (p.firstPaymentAmount || 0) + (p.finalPaymentAmount || 0), 0);
-    const totalPending = totalFunding - totalReceived;
+    // Filter payments for this institution
+    const instPayments = payments.filter(pay => {
+        const client = clientProfiles.find(c => c.id === pay.clientId);
+        return client && client.university === institutionName;
+    });
+
+    // 1. Separate Payments Table Data
+    let paymentTableStudentTotal = 0;
+    let paymentTableProjectTotal = 0;
+    let paymentTableCommonTotal = 0;
+
+    instPayments.forEach(p => {
+        const amt = Number(p.amount) || 0;
+        if (p.studentIds && p.studentIds.length > 0) {
+            paymentTableStudentTotal += amt;
+        } else if (p.projectIds && p.projectIds.length > 0) {
+            paymentTableProjectTotal += amt;
+        } else {
+            paymentTableCommonTotal += amt;
+        }
+    });
+
+    // 2. Project Financials
+    const totalFunding = instProjects.reduce((acc, p) => acc + (Number(p.totalFunding) || 0), 0);
+    const projectReceivedLegacy = instProjects.reduce((acc, p) => acc + (Number(p.firstPaymentAmount) || 0) + (Number(p.finalPaymentAmount) || 0), 0);
+    
+    // Total Project Received = Legacy fields + Payments Table (Project tagged)
+    // Note: If legacy fields duplicate table data, this will be double counting. Assuming table is NEW data.
+    const totalProjectReceived = projectReceivedLegacy + paymentTableProjectTotal;
+    
+    // Project Pending
+    const totalProjectPending = Math.max(0, totalFunding - totalProjectReceived);
+
+
+    // 3. Student Financials
+    const studentTotalFee = instStudents.reduce((acc, s) => acc + (Number(s.totalFee) || 0), 0);
+    const studentReceivedLegacy = instStudents.reduce((acc, s) => acc + (Number(s.firstPaymentAmount) || 0) + (Number(s.finalPaymentAmount) || 0), 0);
+    
+    // Total Student Received
+    const totalStudentReceived = studentReceivedLegacy + paymentTableStudentTotal;
+    
+    // Student Pending
+    const studentPendingFee = Math.max(0, studentTotalFee - totalStudentReceived);
+
+
+    // 4. Global Totals
+    // "Total Received" for the dashboard usually means cash in hand.
+    const totalReceived = totalProjectReceived + totalStudentReceived + paymentTableCommonTotal;
+
+    // "Total Pending" (Global KPI) usually implies Debt.
+    // If we have "Common" payments (unallocated), they should logically offset the debt? 
+    // Or we keep them separate?
+    // Let's assume Common Payments offset the INSTITUTION'S overall pending amount.
+    
+    const rawTotalPending = totalProjectPending + studentPendingFee;
+    const netTotalPending = Math.max(0, rawTotalPending - paymentTableCommonTotal);
+
     const active = instProjects.filter(p => p.status === 'Ongoing').length;
     const completed = instProjects.filter(p => p.status === 'Completed').length;
-
-    // Student Financials
-    const studentTotalFee = instStudents.reduce((acc, s) => acc + (s.totalFee || 0), 0);
-    const studentReceivedFee = instStudents.reduce((acc, s) => acc + (s.firstPaymentAmount || 0) + (s.finalPaymentAmount || 0), 0);
-    const studentPendingFee = studentTotalFee - studentReceivedFee;
 
     const statusData = [
       { name: 'Ongoing', value: active, color: '#3b82f6' },
@@ -209,13 +356,15 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
     return { 
       instProjects, 
       instStudents,
+      instPayments,
       totalProjects: instProjects.length, 
       totalStudents: instStudents.length,
       totalFunding, 
-      totalPending, 
+      totalPending: totalProjectPending, // Export Project Pending specifically
+      netTotalPending, // Export Net Pending (Global)
       totalReceived,
       studentTotalFee,
-      studentReceivedFee,
+      studentReceivedFee: totalStudentReceived,
       studentPendingFee,
       active, 
       completed, 
@@ -225,7 +374,61 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
       geoData,
       timelineData
     };
-  }, [institutionName, projects, students]);
+  }, [institutionName, projects, students, payments, clientProfiles]);
+
+  const handleOpenPaymentDialog = (payment?: Payment) => {
+    if (payment) {
+      setPaymentFormData({
+        ...payment,
+        projectIds: payment.projectIds || [],
+        studentIds: payment.studentIds || []
+      });
+      setEditingPaymentId(payment.id);
+    } else {
+      setPaymentFormData({
+        clientId: defaultClientProfile?.id || '',
+        projectIds: [],
+        studentIds: [],
+        date: new Date().toISOString().split('T')[0],
+        amount: 0,
+        type: 'Common',
+        description: '',
+        paymentMode: 'Cash',
+        gstType: 'Without GST',
+        bankAccount: '',
+        office: undefined
+      });
+      setEditingPaymentId(null);
+    }
+    setIsPaymentDialogOpen(true);
+  };
+
+  const handlePaymentSubmit = () => {
+    if (!paymentFormData.amount || !paymentFormData.date || !paymentFormData.clientId) {
+      alert('Amount, Date, and Client (Profile) are required');
+      return;
+    }
+
+    if (!onAddPayment || !onUpdatePayment) {
+        alert("Payment modification is not enabled for this view.");
+        return;
+    }
+
+    const paymentData = {
+        ...paymentFormData,
+        amount: Number(paymentFormData.amount)
+    } as Payment;
+
+    if (editingPaymentId) {
+      onUpdatePayment({ ...paymentData, id: editingPaymentId });
+    } else {
+      onAddPayment({
+        ...paymentData,
+        id: `PAY${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`
+      });
+    }
+    setIsPaymentDialogOpen(false);
+  };
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', { 
@@ -452,8 +655,8 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
             <Button 
                 variant="contained" 
                 size="small"
-                startIcon={<Printer size={16} />} 
-                onClick={handlePrint}
+                startIcon={<Download size={16} />} 
+                onClick={(e) => setExportMenuAnchor(e.currentTarget)}
                 sx={{ 
                     borderRadius: 0.5, 
                     fontWeight: 800, 
@@ -464,6 +667,26 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
             >
                 Export Silico Report
             </Button>
+            <Menu
+              anchorEl={exportMenuAnchor}
+              open={Boolean(exportMenuAnchor)}
+              onClose={() => setExportMenuAnchor(null)}
+              PaperProps={{ sx: { borderRadius: 1, mt: 1, minWidth: 200 } }}
+            >
+              <MenuItem onClick={handleExportProjects} sx={{ fontWeight: 600, fontSize: '0.85rem', gap: 1 }}>
+                <FileText size={16} /> Export Projects (CSV)
+              </MenuItem>
+              <MenuItem onClick={handleExportStudents} sx={{ fontWeight: 600, fontSize: '0.85rem', gap: 1 }}>
+                <GraduationCap size={16} /> Export Students (CSV)
+              </MenuItem>
+              <MenuItem onClick={handleExportPayments} sx={{ fontWeight: 600, fontSize: '0.85rem', gap: 1 }}>
+                <DollarSign size={16} /> Export Payments (CSV)
+              </MenuItem>
+              <Divider sx={{ my: 0.5 }} />
+              <MenuItem onClick={() => { handlePrint(); setExportMenuAnchor(null); }} sx={{ fontWeight: 600, fontSize: '0.85rem', gap: 1 }}>
+                <Printer size={16} /> Print Dashboard
+              </MenuItem>
+            </Menu>
           </Stack>
         </Box>
 
@@ -603,6 +826,92 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
                       </Grid>
                   </Grid>
                 </Box>
+            </Grid>
+
+            {/* Payment Collection Table */}
+            <Grid size={{ xs: 12 }}>
+            <Paper className="page-break" sx={{ p: 0, borderRadius: 0.5, border: '1.5px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)', mt: 4, mb: 4, overflow: 'hidden' }}>
+              <Box sx={{ p: 3, borderBottom: '1px solid #f1f5f9', bgcolor: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 1000, display: 'block', textTransform: 'uppercase', letterSpacing: 2, color: '#0f172a' }}>Payment Collection</Typography>
+                <Button 
+                    startIcon={<Plus size={16} />} 
+                    variant="contained" 
+                    size="small"
+                    onClick={() => handleOpenPaymentDialog()}
+                    className="no-print"
+                    disabled={!onAddPayment}
+                >
+                    Add Payment
+                </Button>
+              </Box>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: '#fff' }}>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>DATE</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>TYPE</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>PROJECT</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>STUDENT</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>DESCRIPTION</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>MODE</TableCell>
+                      <TableCell sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>ACCOUNT</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }}>AMOUNT (INR)</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 900, fontSize: '0.75rem', color: '#64748b' }} className="no-print">ACTIONS</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {stats.instPayments.map((p, idx) => (
+                      <TableRow key={p.id} hover sx={{ bgcolor: idx % 2 === 0 ? 'transparent' : 'rgba(248, 250, 252, 0.4)' }}>
+                        <TableCell sx={{ fontWeight: 600 }}>{p.date}</TableCell>
+                        <TableCell>
+                             <Chip label={p.type} size="small" sx={{ fontWeight: 700, fontSize: '0.7rem', height: 22, bgcolor: '#f1f5f9', color: '#475569' }} />
+                        </TableCell>
+                        <TableCell sx={{ color: '#475569', fontSize: '0.75rem', fontWeight: 600 }}>
+                            {p.projectIds && p.projectIds.length > 0 
+                                ? p.projectIds.map(id => projects.find(proj => proj.id === id)?.title).filter(Boolean).join(', ') 
+                                : '-'}
+                        </TableCell>
+                        <TableCell sx={{ color: '#475569', fontSize: '0.75rem', fontWeight: 600 }}>
+                             {p.studentIds && p.studentIds.length > 0
+                                ? p.studentIds.map(id => students.find(std => std.id === id)?.name).filter(Boolean).join(', ')
+                                : '-'}
+                        </TableCell>
+                        <TableCell sx={{ color: '#475569' }}>{p.description || '-'}</TableCell>
+                        <TableCell sx={{ color: '#475569' }}>{p.paymentMode}</TableCell>
+                        <TableCell sx={{ color: '#475569' }}>
+                            {p.bankAccount ? (
+                                <Stack spacing={0.5}>
+                                    <Typography variant="caption" fontWeight="700">{p.bankAccount}</Typography>
+                                    <Typography variant="caption" color="textSecondary">{p.gstType}</Typography>
+                                </Stack>
+                            ) : '-'}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800, color: '#10b981' }}>
+                          {formatCurrency(p.amount)}
+                        </TableCell>
+                        <TableCell align="center" className="no-print">
+                            <Stack direction="row" spacing={1} justifyContent="center">
+                                <IconButton size="small" onClick={() => handleOpenPaymentDialog(p)} sx={{ color: '#3b82f6' }} disabled={!onUpdatePayment}>
+                                    <Pencil size={14} />
+                                </IconButton>
+                                <IconButton size="small" onClick={() => onDeletePayment && onDeletePayment(p.id)} sx={{ color: '#ef4444' }} disabled={!onDeletePayment}>
+                                    <Trash2 size={14} />
+                                </IconButton>
+                            </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {stats.instPayments.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                          <Typography color="textSecondary" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>No payments recorded yet.</Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
             </Grid>
 
             {/* SECTION 3: Detailed Audit Logs */}
@@ -762,10 +1071,224 @@ const InstitutionDashboard: React.FC<InstitutionDashboardProps> = ({
             open={!!selectedProject} 
             onClose={() => setSelectedProject(null)} 
             project={selectedProject} 
-            onUpdateProject={onUpdateProject} 
+            onUpdate={onUpdateProject} 
             users={users}
             servers={servers}
         />
+
+        {/* Payment Dialog */}
+        <Dialog open={isPaymentDialogOpen} onClose={() => setIsPaymentDialogOpen(false)}>
+            <DialogTitle>{editingPaymentId ? 'Edit Payment' : 'Record New Payment'}</DialogTitle>
+            <DialogContent>
+                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            select
+                            label="Client (Profile)"
+                            fullWidth
+                            value={paymentFormData.clientId}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, clientId: e.target.value })}
+                            helperText="Select the client profile associated with this payment."
+                        >
+                            {clientProfiles.filter(c => c.university === institutionName).map((client) => (
+                                <MenuItem key={client.id} value={client.id}>{client.name} - {client.department}</MenuItem>
+                            ))}
+                            {clientProfiles.filter(c => c.university === institutionName).length === 0 && (
+                                <MenuItem value="" disabled>No client profiles found for {institutionName}</MenuItem>
+                            )}
+                        </TextField>
+                    </Grid>
+                    
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            select
+                            label="Projects (Multiple)"
+                            fullWidth
+                            value={paymentFormData.projectIds || []}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setPaymentFormData({ 
+                                    ...paymentFormData, 
+                                    projectIds: typeof value === 'string' ? value.split(',') : value as string[] 
+                                });
+                            }}
+                            slotProps={{
+                                select: {
+                                    multiple: true,
+                                    renderValue: (selected: any) => (
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                            {(selected as string[]).map((id) => (
+                                                <Chip 
+                                                    key={id} 
+                                                    label={projects.find(p => p.id === id)?.title || id} 
+                                                    size="small" 
+                                                    onDelete={() => {
+                                                        const newIds = paymentFormData.projectIds?.filter(pid => pid !== id) || [];
+                                                        setPaymentFormData({ ...paymentFormData, projectIds: newIds });
+                                                    }}
+                                                    onMouseDown={(event) => event.stopPropagation()}
+                                                />
+                                            ))}
+                                        </Box>
+                                    )
+                                }
+                            }}
+                        >
+                            {stats.instProjects.map((p) => (
+                                <MenuItem key={p.id} value={p.id}>{p.title}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Grid>
+
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            select
+                            label="Students (Multiple)"
+                            fullWidth
+                            value={paymentFormData.studentIds || []}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setPaymentFormData({ 
+                                    ...paymentFormData, 
+                                    studentIds: typeof value === 'string' ? value.split(',') : value as string[] 
+                                });
+                            }}
+                            slotProps={{
+                                select: {
+                                    multiple: true,
+                                    renderValue: (selected: any) => (
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                            {(selected as string[]).map((id) => (
+                                                <Chip 
+                                                    key={id} 
+                                                    label={students.find(s => s.id === id)?.name || id} 
+                                                    size="small" 
+                                                    onDelete={() => {
+                                                        const newIds = paymentFormData.studentIds?.filter(sid => sid !== id) || [];
+                                                        setPaymentFormData({ ...paymentFormData, studentIds: newIds });
+                                                    }}
+                                                    onMouseDown={(event) => event.stopPropagation()}
+                                                />
+                                            ))}
+                                        </Box>
+                                    )
+                                }
+                            }}
+                        >
+                            {stats.instStudents.map((s) => (
+                                <MenuItem key={s.id} value={s.id}>{s.name} - {s.enrollmentNumber}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Grid>
+
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            label="Date"
+                            type="date"
+                            fullWidth
+                            value={paymentFormData.date}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, date: e.target.value })}
+                        />
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            label="Amount (INR)"
+                            type="number"
+                            fullWidth
+                            value={paymentFormData.amount}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, amount: Number(e.target.value) })}
+                        />
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
+                         <TextField
+                            select
+                            label="Payment Type"
+                            fullWidth
+                            value={paymentFormData.type}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, type: e.target.value as any })}
+                        >
+                            <MenuItem value="Common">Common</MenuItem>
+                            <MenuItem value="Project">Project</MenuItem>
+                            <MenuItem value="Advance">Advance</MenuItem>
+                            <MenuItem value="Other">Other</MenuItem>
+                        </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12 }}>
+                         <TextField
+                            select
+                            label="Payment Mode"
+                            fullWidth
+                            value={paymentFormData.paymentMode}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, paymentMode: e.target.value as any })}
+                        >
+                            {paymentModeOptions.map((mode) => (
+                                <MenuItem key={mode} value={mode}>{mode}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Grid>
+                    
+                    {/* GST and Banking Logic */}
+                    <Grid size={{ xs: 12, md: 6 }}>
+                        <TextField
+                            select
+                            label="GST Type"
+                            fullWidth
+                            value={paymentFormData.gstType || 'Without GST'}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, gstType: e.target.value as any, office: undefined, bankAccount: '' })}
+                        >
+                            <MenuItem value="Without GST">Without GST</MenuItem>
+                            <MenuItem value="With GST">With GST</MenuItem>
+                        </TextField>
+                    </Grid>
+
+                    {paymentFormData.gstType === 'With GST' && (
+                        <Grid size={{ xs: 12, md: 6 }}>
+                            <TextField
+                                select
+                                label="Office"
+                                fullWidth
+                                value={paymentFormData.office || ''}
+                                onChange={(e) => setPaymentFormData({ ...paymentFormData, office: e.target.value as any, bankAccount: '' })}
+                            >
+                                <MenuItem value="Ooty">Ooty</MenuItem>
+                                <MenuItem value="Coimbatore">Coimbatore</MenuItem>
+                            </TextField>
+                        </Grid>
+                    )}
+
+                    <Grid size={{ xs: 12 }}>
+                        <TextField
+                            select
+                            label="Bank Account"
+                            fullWidth
+                            value={paymentFormData.bankAccount || ''}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, bankAccount: e.target.value })}
+                            disabled={!availableBankAccounts.length}
+                        >
+                            {availableBankAccounts.map((account) => (
+                                <MenuItem key={account} value={account}>{account}</MenuItem>
+                            ))}
+                            {availableBankAccounts.length === 0 && <MenuItem value="">Select GST/Office first</MenuItem>}
+                        </TextField>
+                    </Grid>
+
+                     <Grid size={{ xs: 12 }}>
+                        <TextField
+                            label="Description"
+                            fullWidth
+                            multiline
+                            rows={2}
+                            value={paymentFormData.description}
+                            onChange={(e) => setPaymentFormData({ ...paymentFormData, description: e.target.value })}
+                        />
+                    </Grid>
+                </Grid>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setIsPaymentDialogOpen(false)}>Cancel</Button>
+                <Button variant="contained" onClick={handlePaymentSubmit}>Save Payment</Button>
+            </DialogActions>
+        </Dialog>
     </Box>
   );
 };

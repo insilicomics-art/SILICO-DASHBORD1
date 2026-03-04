@@ -30,7 +30,7 @@ import {
   Alert
 } from '@mui/material';
 import { Search, Plus, Trash2, Edit2, User, School, CreditCard, MapPin, FileSpreadsheet, Users, GraduationCap } from 'lucide-react';
-import { type Student, indianStates, stateCities, departments, paymentModeOptions, bankAccountOptions } from '../data/mockData';
+import { type Student, indianStates, stateCities, departments, paymentModeOptions, bankAccountOptions, countries, usaStates, japanPrefectures } from '../data/mockData';
 import { downloadCSV } from '../utils/csvExport';
 
 interface StudentTableProps {
@@ -41,7 +41,7 @@ interface StudentTableProps {
   onDeleteStudent: (id: string) => void;
 }
 
-const OfficeCard = ({ title, stats, color, icon, isSelected, onClick }: { title: string, stats: any, color: string, icon: React.ReactNode, isSelected: boolean, onClick: () => void }) => (
+const OfficeCard = ({ title, stats, color, icon, isSelected, onClick }: { title: string, stats: { total: number; active: number; graduated: number; revenue: number }, color: string, icon: React.ReactNode, isSelected: boolean, onClick: () => void }) => (
   <Paper 
     onClick={onClick}
     sx={{ 
@@ -194,7 +194,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
 
   const availableCities = useMemo(() => {
     if (studentForm.state && stateCities[studentForm.state]) {
-        return stateCities[studentForm.state];
+        return [...stateCities[studentForm.state]].sort();
     }
     return [];
   }, [studentForm.state]);
@@ -458,17 +458,40 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                         <Typography variant="h6" fontWeight="bold" color="#1e293b">Location Details</Typography>
                     </Stack>
                     <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6 }} >
+                        <Grid size={{ xs: 12 }} >
                             <FormControl fullWidth>
+                                <InputLabel>Country</InputLabel>
+                                <Select
+                                value={studentForm.country || 'India'}
+                                label="Country"
+                                onChange={(e) => setStudentForm({...studentForm, country: e.target.value, state: '', city: ''})}
+                                >
+                                {countries.map((country) => (
+                                    <MenuItem key={country} value={country}>{country}</MenuItem>
+                                ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }} >
+                            <FormControl fullWidth disabled={!studentForm.country}>
                                 <InputLabel>State</InputLabel>
                                 <Select
                                 value={studentForm.state || ''}
                                 label="State"
                                 onChange={(e) => setStudentForm({...studentForm, state: e.target.value, city: ''})}
                                 >
-                                {indianStates.map((state) => (
+                                {studentForm.country === 'India' && indianStates.map((state) => (
                                     <MenuItem key={state} value={state}>{state}</MenuItem>
                                 ))}
+                                {studentForm.country === 'United States' && usaStates.map((state) => (
+                                    <MenuItem key={state} value={state}>{state}</MenuItem>
+                                ))}
+                                {studentForm.country === 'Japan' && japanPrefectures.map((state) => (
+                                    <MenuItem key={state} value={state}>{state}</MenuItem>
+                                ))}
+                                {studentForm.country !== 'India' && studentForm.country !== 'United States' && studentForm.country !== 'Japan' && (
+                                    <MenuItem value="">N/A</MenuItem>
+                                )}
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -485,14 +508,6 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 ))}
                                 </Select>
                             </FormControl>
-                        </Grid>
-                         <Grid size={{ xs: 12 }} >
-                            <TextField 
-                                label="Country" 
-                                fullWidth 
-                                value={studentForm.country} 
-                                onChange={(e) => setStudentForm({...studentForm, country: e.target.value})} 
-                            />
                         </Grid>
                     </Grid>
                 </Paper>
@@ -545,7 +560,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 <Select
                                 value={studentForm.office || 'Ooty'}
                                 label="Office Location"
-                                onChange={(e) => setStudentForm({...studentForm, office: e.target.value as any})}
+                                onChange={(e) => setStudentForm({...studentForm, office: e.target.value as 'Ooty' | 'Coimbatore'})}
                                 >
                                 <MenuItem value="Ooty">Ooty</MenuItem>
                                 <MenuItem value="Coimbatore">Coimbatore</MenuItem>
@@ -566,7 +581,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 <Select
                                 value={studentForm.enrollmentType || 'Internship'}
                                 label="Type"
-                                onChange={(e) => setStudentForm({...studentForm, enrollmentType: e.target.value as any})}
+                                onChange={(e) => setStudentForm({...studentForm, enrollmentType: e.target.value as Student['enrollmentType']})}
                                 >
                                 <MenuItem value="Internship">Internship</MenuItem>
                                 <MenuItem value="Workshop">Workshop</MenuItem>
@@ -583,7 +598,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 <Select
                                 value={studentForm.mode || 'Offline'}
                                 label="Mode"
-                                onChange={(e) => setStudentForm({...studentForm, mode: e.target.value as any})}
+                                onChange={(e) => setStudentForm({...studentForm, mode: e.target.value as Student['mode']})}
                                 >
                                 <MenuItem value="Offline">Offline</MenuItem>
                                 <MenuItem value="Online">Online</MenuItem>
@@ -607,7 +622,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 <Select
                                 value={studentForm.status || 'Active'}
                                 label="Status"
-                                onChange={(e) => setStudentForm({...studentForm, status: e.target.value as any})}
+                                onChange={(e) => setStudentForm({...studentForm, status: e.target.value as Student['status']})}
                                 >
                                 <MenuItem value="Active">Active</MenuItem>
                                 <MenuItem value="Inactive">Inactive</MenuItem>
@@ -646,7 +661,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 <Select
                                 value={studentForm.gstType || 'Without GST'}
                                 label="GST Type"
-                                onChange={(e) => setStudentForm({...studentForm, gstType: e.target.value as any})}
+                                onChange={(e) => setStudentForm({...studentForm, gstType: e.target.value as 'With GST' | 'Without GST'})}
                                 >
                                 <MenuItem value="Without GST">Without GST</MenuItem>
                                 <MenuItem value="With GST">With GST</MenuItem>
@@ -706,7 +721,7 @@ const StudentTable: React.FC<StudentTableProps> = ({ students, institutions, onA
                                 <Select
                                 value={studentForm.paymentMode || ''}
                                 label="Payment Mode"
-                                onChange={(e) => setStudentForm({...studentForm, paymentMode: e.target.value as any})}
+                                onChange={(e) => setStudentForm({...studentForm, paymentMode: e.target.value as 'Cash' | 'Bank Transfer' | 'Cheque' | 'GPay' | 'PhonePe'})}
                                 >
                                 {paymentModeOptions.map((mode) => (
                                     <MenuItem key={mode} value={mode}>{mode}</MenuItem>

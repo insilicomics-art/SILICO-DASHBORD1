@@ -11,7 +11,7 @@ import ProjectTypeTable from './components/ProjectTypeTable';
 import ProjectTypeAnalysis from './components/ProjectTypeAnalysis';
 import Analytics from './components/Analytics';
 import Login from './components/Login';
-import { type Project, type User, type ClientProfile, type Student, projects as initialProjects, mockUsers, initialInstitutions, initialProjectTypes, initialClientProfiles, initialStudents } from './data/mockData';
+import { type Project, type User, type ClientProfile, type Student, type Payment, type Institution, projects as initialProjects, mockUsers, initialInstitutions, initialProjectTypes, initialClientProfiles, initialStudents, initialPayments, initialServers } from './data/mockData';
 import ClientDirectoryTable from './components/ClientDirectoryTable';
 import InstitutionsAnalysis from './components/InstitutionsAnalysis';
 import ClientAnalysis from './components/ClientAnalysis';
@@ -142,16 +142,12 @@ function App() {
   // Initialize state
   const [projectsData, setProjectsData] = useState<Project[]>(initialProjects);
   const [usersData, setUsersData] = useState<User[]>(mockUsers);
-  const [clientsData, setClientsData] = useState<string[]>(initialInstitutions);
+  const [clientsData, setClientsData] = useState<Institution[]>(initialInstitutions);
   const [projectTypesData, setProjectTypesData] = useState<string[]>(initialProjectTypes);
   const [clientProfilesData, setClientProfilesData] = useState<ClientProfile[]>(initialClientProfiles);
   const [studentsData, setStudentsData] = useState<Student[]>(initialStudents);
-  const [serversData, setServersData] = useState<Server[]>([
-    { id: 'S1', name: 'HPC Cluster', specs: '128 Cores, 512GB RAM', status: 'Active' },
-    { id: 'S2', name: 'Server 1', specs: '64 Cores, 256GB RAM', status: 'Active' },
-    { id: 'S3', name: 'Server 2', specs: '32 Cores, 128GB RAM', status: 'Maintenance' },
-    { id: 'S4', name: 'Server 3', specs: '16 Cores, 64GB RAM', status: 'Inactive' }
-  ]);
+  const [paymentsData, setPaymentsData] = useState<Payment[]>(initialPayments);
+  const [serversData, setServersData] = useState<Server[]>(initialServers);
 
   const handleLogin = (user: string) => {
     setIsAuthenticated(true);
@@ -172,14 +168,15 @@ function App() {
 
     const fetchData = async () => {
       try {
-        const [projects, users, clients, types, profiles, students, servers] = await Promise.all([
+        const [projects, users, clients, types, profiles, students, servers, payments] = await Promise.all([
           api.getProjects(),
           api.getUsers(),
           api.getInstitutions(),
           api.getProjectTypes(),
           api.getClientProfiles(),
           api.getStudents(),
-          api.getServers()
+          api.getServers(),
+          api.getPayments()
         ]);
         setProjectsData(projects);
         setUsersData(users);
@@ -188,6 +185,7 @@ function App() {
         setClientProfilesData(profiles);
         setStudentsData(students);
         setServersData(servers);
+        setPaymentsData(payments);
       } catch (error) {
         console.error("Failed to fetch data:", error);
       }
@@ -202,6 +200,7 @@ function App() {
       setProjectsData((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create project:", error);
+      setProjectsData((prev) => [newProject, ...prev]);
     }
   };
 
@@ -211,6 +210,7 @@ function App() {
       setProjectsData((prev) => prev.map(p => p.id === updated.id ? updated : p));
     } catch (error) {
       console.error("Failed to update project:", error);
+      setProjectsData((prev) => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
     }
   };
 
@@ -220,6 +220,7 @@ function App() {
       setProjectsData((prev) => prev.filter(p => p.id !== id));
     } catch (error) {
       console.error("Failed to delete project:", error);
+      setProjectsData((prev) => prev.filter(p => p.id !== id));
     }
   };
 
@@ -229,6 +230,7 @@ function App() {
       setUsersData((prev) => [...prev, created]);
     } catch (error) {
       console.error("Failed to create user:", error);
+      setUsersData((prev) => [...prev, newUser]);
     }
   };
 
@@ -238,6 +240,7 @@ function App() {
       setUsersData((prev) => prev.map(u => u.id === updated.id ? updated : u));
     } catch (error) {
       console.error("Failed to update user:", error);
+      setUsersData((prev) => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     }
   };
 
@@ -247,6 +250,7 @@ function App() {
       setUsersData((prev) => prev.filter(u => u.id !== id));
     } catch (error) {
       console.error("Failed to delete user:", error);
+      setUsersData((prev) => prev.filter(u => u.id !== id));
     }
   };
 
@@ -256,6 +260,7 @@ function App() {
       setStudentsData((prev) => [...prev, created]);
     } catch (error) {
       console.error("Failed to create student:", error);
+      setStudentsData((prev) => [...prev, newStudent]);
     }
   };
 
@@ -265,6 +270,7 @@ function App() {
       setStudentsData((prev) => prev.map(s => s.id === updated.id ? updated : s));
     } catch (error) {
       console.error("Failed to update student:", error);
+      setStudentsData((prev) => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
     }
   };
 
@@ -274,24 +280,45 @@ function App() {
       setStudentsData((prev) => prev.filter(s => s.id !== id));
     } catch (error) {
       console.error("Failed to delete student:", error);
+      setStudentsData((prev) => prev.filter(s => s.id !== id));
     }
   };
 
-  const handleAddClient = async (newClient: string) => {
+  const handleAddClient = async (newClient: Partial<Institution>) => {
     try {
-      const createdName = await api.createInstitution(newClient);
-      setClientsData((prev) => [...prev, createdName]);
+      const created = await api.createInstitution(newClient);
+      setClientsData((prev) => [...prev, created]);
     } catch (error) {
       console.error("Failed to create institution:", error);
+      // Fallback for mock mode or error
+      if (newClient.name) {
+          const fallback: Institution = {
+              id: newClient.id || newClient.name.replace(/\s+/g, '-').toLowerCase(),
+              name: newClient.name,
+              country: newClient.country || 'India'
+          };
+          setClientsData((prev) => [...prev, fallback]);
+      }
     }
   };
 
-  const handleDeleteClient = async (clientToDelete: string) => {
+  const handleUpdateClient = async (updatedClient: Institution) => {
     try {
-      await api.deleteInstitution(clientToDelete);
-      setClientsData((prev) => prev.filter(c => c !== clientToDelete));
+      const updated = await api.updateInstitution(updatedClient);
+      setClientsData((prev) => prev.map(c => c.id === updated.id ? updated : c));
+    } catch (error) {
+      console.error("Failed to update institution:", error);
+      setClientsData((prev) => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+    }
+  };
+
+  const handleDeleteClient = async (clientId: string) => {
+    try {
+      await api.deleteInstitution(clientId);
+      setClientsData((prev) => prev.filter(c => c.id !== clientId));
     } catch (error) {
       console.error("Failed to delete institution:", error);
+      setClientsData((prev) => prev.filter(c => c.id !== clientId));
     }
   };
 
@@ -301,6 +328,7 @@ function App() {
       setProjectTypesData((prev) => [...prev, createdName]);
     } catch (error) {
       console.error("Failed to create project type:", error);
+      setProjectTypesData((prev) => [...prev, newType]);
     }
   };
 
@@ -310,6 +338,7 @@ function App() {
       setProjectTypesData((prev) => prev.filter(t => t !== typeToDelete));
     } catch (error) {
       console.error("Failed to delete project type:", error);
+      setProjectTypesData((prev) => prev.filter(t => t !== typeToDelete));
     }
   };
 
@@ -319,6 +348,7 @@ function App() {
       setClientProfilesData((prev) => [...prev, created]);
     } catch (error) {
       console.error("Failed to create client profile:", error);
+      setClientProfilesData((prev) => [...prev, newProfile]);
     }
   };
 
@@ -328,6 +358,7 @@ function App() {
       setClientProfilesData((prev) => prev.map(p => p.id === updated.id ? updated : p));
     } catch (error) {
       console.error("Failed to update client profile:", error);
+      setClientProfilesData((prev) => prev.map(p => p.id === updatedProfile.id ? updatedProfile : p));
     }
   };
 
@@ -337,6 +368,37 @@ function App() {
       setClientProfilesData((prev) => prev.filter(p => p.id !== id));
     } catch (error) {
       console.error("Failed to delete client profile:", error);
+      setClientProfilesData((prev) => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const handleAddPayment = async (newPayment: Payment) => {
+    try {
+      const created = await api.createPayment(newPayment);
+      setPaymentsData((prev) => [...prev, created]);
+    } catch (error) {
+      console.error("Failed to create payment:", error);
+      setPaymentsData((prev) => [...prev, newPayment]);
+    }
+  };
+
+  const handleUpdatePayment = async (updatedPayment: Payment) => {
+    try {
+      const updated = await api.updatePayment(updatedPayment);
+      setPaymentsData((prev) => prev.map(p => p.id === updated.id ? updated : p));
+    } catch (error) {
+      console.error("Failed to update payment:", error);
+      setPaymentsData((prev) => prev.map(p => p.id === updatedPayment.id ? updatedPayment : p));
+    }
+  };
+
+  const handleDeletePayment = async (id: string) => {
+    try {
+      await api.deletePayment(id);
+      setPaymentsData((prev) => prev.filter(p => p.id !== id));
+    } catch (error) {
+      console.error("Failed to delete payment:", error);
+      setPaymentsData((prev) => prev.filter(p => p.id !== id));
     }
   };
 
@@ -369,153 +431,176 @@ function App() {
 
   const renderContent = () => {
     switch (currentView) {
-      case 'dashboard':
-        return <DashboardOverview projects={projectsData} students={studentsData} />;
-      case 'projects':
-        return (
-          <ProjectTable 
-            projects={projectsData} 
-            users={usersData}
-            clients={clientsData}
-            clientNames={clientProfilesData.map(p => p.name)}
-            projectTypes={projectTypesData}
-            servers={serversData}
-            onAddProject={handleAddProject}
-            onUpdateProject={handleUpdateProject}
-            onDeleteProject={handleDeleteProject}
-          />
-        );
-      case 'users':
-        return (
-          <UserTable 
-            users={usersData} 
-            projects={projectsData}
-            onAddUser={handleAddUser} 
-            onUpdateUser={handleUpdateUser}
-            onDeleteUser={handleDeleteUser} 
-          />
-        );
-      case 'students':
-        return (
-          <StudentTable 
-            students={studentsData} 
-            institutions={clientsData}
-            onAddStudent={handleAddStudent} 
-            onUpdateStudent={handleUpdateStudent} 
-            onDeleteStudent={handleDeleteStudent} 
-          />
-        );
-      case 'clients':
-        return (
-          <ClientTable 
-            clients={clientsData} 
-            projects={projectsData} 
-            students={studentsData}
-            onAddClient={handleAddClient} 
-            onDeleteClient={handleDeleteClient}
-            onSelectClient={(inst) => {
-              setSelectedInstitution(inst);
-              setCurrentView('institution-detail');
-            }}
-          />
-        );
-      case 'client-directory':
-        return (
-          <ClientDirectoryTable 
-            clients={clientProfilesData} 
-            institutions={clientsData}
-            onAddClient={handleAddClientProfile} 
-            onUpdateClient={handleUpdateClientProfile} 
-            onDeleteClient={handleDeleteClientProfile} 
-            onSelectClient={(client) => {
-              setSelectedClient(client);
-              setCurrentView('client-analysis');
-            }}
-          />
-        );
-      case 'client-analysis':
-        return selectedClient ? (
-          <ClientAnalysis 
-            client={selectedClient} 
-            projects={projectsData} 
-            onBack={() => setCurrentView('client-directory')} 
-          />
-        ) : null;
-      case 'project-types':
-        return (
-          <ProjectTypeTable 
-            projectTypes={projectTypesData} 
-            projects={projectsData}
-            onAddProjectType={handleAddProjectType} 
-            onDeleteProjectType={handleDeleteProjectType}
-            onSelectProjectType={(type) => {
-              setSelectedProjectType(type);
-              setCurrentView('project-type-detail');
-            }}
-          />
-        );
-      case 'project-type-detail':
-        return (
-          <ProjectTypeAnalysis 
-            projectType={selectedProjectType} 
-            projects={projectsData} 
-            onBack={() => setCurrentView('project-types')}
-          />
-        );
-      case 'institution-detail':
-        return (
-          <InstitutionDashboard 
-            institutionName={selectedInstitution} 
-            projects={projectsData} 
-            students={studentsData}
-            users={usersData}
-            servers={serversData}
-            onUpdateProject={handleUpdateProject}
-            onBack={() => setCurrentView('clients')}
-          />
-        );
-      case 'vit':
-        return (
-          <InstitutionDashboard 
-            institutionName="VIT Vellore" 
-            projects={projectsData} 
-            students={studentsData}
-            users={usersData}
-            servers={serversData}
-            onUpdateProject={handleUpdateProject}
-            onBack={() => setCurrentView('dashboard')}
-          />
-        );
-      case 'bionome':
-        return (
-          <InstitutionDashboard 
-            institutionName="Bionome" 
-            projects={projectsData} 
-            students={studentsData}
-            users={usersData}
-            servers={serversData}
-            onUpdateProject={handleUpdateProject}
-            onBack={() => setCurrentView('dashboard')}
-          />
-        );
-      case 'kle':
-        return (
-          <InstitutionDashboard 
-            institutionName="KLE Tech" 
-            projects={projectsData} 
-            students={studentsData}
-            users={usersData}
-            servers={serversData}
-            onUpdateProject={handleUpdateProject}
-            onBack={() => setCurrentView('dashboard')}
-          />
-        );
-      case 'analytics':
-        return <Analytics projects={projectsData} clientProfiles={clientProfilesData} students={studentsData} servers={serversData} />;
-      case 'servers':
-        return <ServerTable servers={serversData} projects={projectsData} onAddServer={handleAddServer} onUpdateServer={handleUpdateServer} onDeleteServer={handleDeleteServer} />;
+            case 'dashboard':
+              return <DashboardOverview projects={projectsData} students={studentsData} payments={paymentsData} clientProfiles={clientProfilesData} />;
+            case 'projects':
+              return (
+                <ProjectTable 
+                  projects={projectsData} 
+                  users={usersData}
+                  clients={clientsData.map(c => c.name)}
+                  clientNames={clientProfilesData.map(p => p.name)}
+                  projectTypes={projectTypesData}
+                  servers={serversData}
+                  onAddProject={handleAddProject}
+                  onUpdateProject={handleUpdateProject}
+                  onDeleteProject={handleDeleteProject}
+                />
+              );
+            case 'users':
+              return (
+                <UserTable 
+                  users={usersData} 
+                  projects={projectsData}
+                  onAddUser={handleAddUser} 
+                  onUpdateUser={handleUpdateUser}
+                  onDeleteUser={handleDeleteUser} 
+                />
+              );
+            case 'students':
+              return (
+                <StudentTable 
+                  students={studentsData} 
+                  institutions={clientsData.map(c => c.name)}
+                  onAddStudent={handleAddStudent} 
+                  onUpdateStudent={handleUpdateStudent} 
+                  onDeleteStudent={handleDeleteStudent} 
+                />
+              );
+            case 'clients':
+              return (
+                <ClientTable 
+                  clients={clientsData} 
+                  projects={projectsData} 
+                  students={studentsData}
+                  onAddClient={handleAddClient} 
+                  onUpdateClient={handleUpdateClient}
+                  onDeleteClient={handleDeleteClient}
+                  onSelectClient={(inst) => {
+                    setSelectedInstitution(inst.name);
+                    setCurrentView('institution-detail');
+                  }}
+                />
+              );
+            case 'client-directory':
+              return (
+                <ClientDirectoryTable 
+                  clients={clientProfilesData} 
+                  institutions={clientsData.map(c => c.name)}
+                  onAddClient={handleAddClientProfile} 
+                  onUpdateClient={handleUpdateClientProfile} 
+                  onDeleteClient={handleDeleteClientProfile} 
+                  onSelectClient={(client) => {
+                    setSelectedClient(client);
+                    setCurrentView('client-analysis');
+                  }}
+                />
+              );
+            case 'client-analysis':
+              return selectedClient ? (
+                <ClientAnalysis 
+                  client={selectedClient} 
+                  projects={projectsData}
+                  payments={paymentsData}
+                  onAddPayment={handleAddPayment}
+                  onUpdatePayment={handleUpdatePayment}
+                  onDeletePayment={handleDeletePayment}
+                  onBack={() => setCurrentView('client-directory')} 
+                />
+              ) : null;
+            case 'project-types':
+              return (
+                <ProjectTypeTable 
+                  projectTypes={projectTypesData} 
+                  projects={projectsData}
+                  onAddProjectType={handleAddProjectType} 
+                  onDeleteProjectType={handleDeleteProjectType}
+                  onSelectProjectType={(type) => {
+                    setSelectedProjectType(type);
+                    setCurrentView('project-type-detail');
+                  }}
+                />
+              );
+            case 'project-type-detail':
+              return (
+                <ProjectTypeAnalysis 
+                  projectType={selectedProjectType} 
+                  projects={projectsData} 
+                  onBack={() => setCurrentView('project-types')}
+                />
+              );
+                  case 'institution-detail':
+                    return (
+                      <InstitutionDashboard 
+                        institutionName={selectedInstitution} 
+                        projects={projectsData} 
+                        students={studentsData}
+                        users={usersData}
+                        servers={serversData}
+                        payments={paymentsData}
+                        clientProfiles={clientProfilesData}
+                        onUpdateProject={handleUpdateProject}
+                        onAddPayment={handleAddPayment}
+                        onUpdatePayment={handleUpdatePayment}
+                        onDeletePayment={handleDeletePayment}
+                        onBack={() => setCurrentView('clients')}
+                      />
+                    );
+                  case 'vit':
+                    return (
+                      <InstitutionDashboard 
+                        institutionName="VIT Vellore" 
+                        projects={projectsData} 
+                        students={studentsData}
+                        users={usersData}
+                        servers={serversData}
+                        payments={paymentsData}
+                        clientProfiles={clientProfilesData}
+                        onUpdateProject={handleUpdateProject}
+                        onAddPayment={handleAddPayment}
+                        onUpdatePayment={handleUpdatePayment}
+                        onDeletePayment={handleDeletePayment}
+                        onBack={() => setCurrentView('dashboard')}
+                      />
+                    );
+                  case 'bionome':
+                    return (
+                      <InstitutionDashboard 
+                        institutionName="Bionome" 
+                        projects={projectsData} 
+                        students={studentsData}
+                        users={usersData}
+                        servers={serversData}
+                        payments={paymentsData}
+                        clientProfiles={clientProfilesData}
+                        onUpdateProject={handleUpdateProject}
+                        onAddPayment={handleAddPayment}
+                        onUpdatePayment={handleUpdatePayment}
+                        onDeletePayment={handleDeletePayment}
+                        onBack={() => setCurrentView('dashboard')}
+                      />
+                    );
+                  case 'kle':
+                    return (
+                      <InstitutionDashboard 
+                        institutionName="KLE Tech" 
+                        projects={projectsData} 
+                        students={studentsData}
+                        users={usersData}
+                        servers={serversData}
+                        payments={paymentsData}
+                        clientProfiles={clientProfilesData}
+                        onUpdateProject={handleUpdateProject}
+                        onAddPayment={handleAddPayment}
+                        onUpdatePayment={handleUpdatePayment}
+                        onDeletePayment={handleDeletePayment}
+                        onBack={() => setCurrentView('dashboard')}
+                      />
+                    );            case 'analytics':
+              return <Analytics projects={projectsData} clientProfiles={clientProfilesData} students={studentsData} servers={serversData} payments={paymentsData} />;
+            case 'servers':        return <ServerTable servers={serversData} projects={projectsData} onAddServer={handleAddServer} onUpdateServer={handleUpdateServer} onDeleteServer={handleDeleteServer} />;
       case 'institutions-analysis':
-        return <InstitutionsAnalysis projects={projectsData} institutions={clientsData} students={studentsData} />;
+        return <InstitutionsAnalysis projects={projectsData} institutions={clientsData.map(c => c.name)} students={studentsData} payments={paymentsData} clientProfiles={clientProfilesData} />;
       case 'settings':
         return (
           <Box sx={{ p: 3 }}>
@@ -526,7 +611,7 @@ function App() {
           </Box>
         );
       default:
-        return <DashboardOverview projects={projectsData} students={studentsData} />;
+        return <DashboardOverview projects={projectsData} students={studentsData} payments={paymentsData} clientProfiles={clientProfilesData} />;
     }
   };
 

@@ -58,7 +58,7 @@ const ServerAnalysis: React.FC<ServerAnalysisProps> = ({ server, projects, onBac
     projects.forEach(p => {
       if (p.activities) {
         p.activities.forEach(a => {
-          if (a.server === server.name) {
+          if (a.server && server.name && a.server.trim() === server.name.trim()) {
             activities.push({ ...a, projectTitle: p.title, projectId: p.id });
           }
         });
@@ -80,9 +80,14 @@ const ServerAnalysis: React.FC<ServerAnalysisProps> = ({ server, projects, onBac
         projectIds.add(project.id);
         const totalProjectActivities = project.activities?.length || 1;
         
-        // Calculate per-activity share
-        const perActivityFunding = project.totalFunding / totalProjectActivities;
-        const totalProjReceived = (project.firstPaymentAmount || 0) + (project.finalPaymentAmount || 0);
+        // Calculate per-activity share with robust number parsing
+        const projFunding = Number(project.totalFunding) || 0;
+        const perActivityFunding = projFunding / totalProjectActivities;
+        
+        const received1 = Number(project.firstPaymentAmount) || 0;
+        const received2 = Number(project.finalPaymentAmount) || 0;
+        const totalProjReceived = received1 + received2;
+        
         const perActivityReceived = totalProjReceived / totalProjectActivities;
         
         totalFunding += perActivityFunding;
@@ -278,7 +283,7 @@ const ServerAnalysis: React.FC<ServerAnalysisProps> = ({ server, projects, onBac
                         <Cell key={`cell-${index}`} fill={FUNDING_COLORS[index % FUNDING_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: any) => formatCurrency(Number(value))} />
+                    <Tooltip formatter={(value: number | string | undefined) => formatCurrency(Number(value || 0))} />
                     <Legend verticalAlign="bottom" height={36}/>
                   </PieChart>
                 </ResponsiveContainer>
