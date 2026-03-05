@@ -2,6 +2,7 @@
   "name": "vit-dashboard",
   "private": true,
   "version": "0.0.0",
+  "homepage": "https://insilicomics-art.github.io/SILICO-DASHBORD1",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"vite\"",
