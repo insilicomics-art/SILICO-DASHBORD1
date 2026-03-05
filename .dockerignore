@@ -1,0 +1,18 @@
+node_modules
+.git
+.gitignore
+.dockerignore
+dist
+src
+public
+scripts
+README.md
+DEPLOYMENT.md
+vite.config.ts
+tsconfig.json
+tsconfig.node.json
+tsconfig.app.json
+eslint.config.js
+index.html
+128.Divya Varshini N.pdf
+.replit
